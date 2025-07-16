@@ -1,16 +1,18 @@
-//
-// Created by spenc on 7/16/2025.
-//
+#pragma once
+#include <string>
 
-#ifndef SERVER_H
-#define SERVER_H
-
-
+extern "C" {
+#include "lua.h"
+}
 
 class Server {
+public:
+    Server(int port, lua_State* L);
+    void run();
 
+private:
+    int port;
+    lua_State* L;
+    static std::string receiveRequest(int clientSocket);
+    static void sendResponse(int clientSocket, int code, const std::string& contentType, const std::string& body);
 };
-
-
-
-#endif //SERVER_H
