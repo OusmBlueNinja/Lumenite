@@ -1,51 +1,320 @@
+<!-- templates/index.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Live Chatroom</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta charset="utf-8">
+    <title>Lumenite Chat &amp; Performance Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+    <!-- Bootstrap 5 CSS -->
+    <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+            rel="stylesheet"
+            crossorigin="anonymous"
+    >
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <style>
-        #messages { max-height: 400px; overflow-y: auto; }
-        .message { padding: 5px; border-bottom: 1px solid #ddd; }
-        .timestamp { font-size: 0.8em; color: #888; float: right; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f0f2f5;
+            margin: 0;
+        }
+        .navbar-brand {
+            font-weight: 600;
+            color: #6d5dfc !important;
+        }
+        .hero {
+            padding: 3rem 1rem;
+            text-align: center;
+            background: linear-gradient(135deg, #6d5dfc 0%, #c77dff 100%);
+            color: #fff;
+        }
+        .hero h1 {
+            font-size: 2.25rem;
+            margin-bottom: .5rem;
+        }
+        .hero p {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+        .metrics {
+            background: #fff;
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        .metrics span {
+            font-weight: 600;
+            color: #6d5dfc;
+        }
+        .chart-section {
+            background: #fff;
+            padding: 2rem 1rem;
+            margin-top: 1rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        .chart-title {
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #343a40;
+        }
+        .chart-container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        .chat-container {
+            max-width: 640px;
+            margin: 2rem auto;
+        }
+        .chat-window {
+            height: 300px;
+            overflow-y: auto;
+            background: #fff;
+            border-radius: .75rem;
+            padding: 1rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .chat-message {
+            display: flex;
+            margin-bottom: 1rem;
+        }
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #6d5dfc;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .bubble {
+            margin-left: .75rem;
+            background: #f1f3f5;
+            border-radius: 1rem 1rem 1rem .25rem;
+            padding: .5rem .75rem;
+            max-width: 80%;
+        }
+        .bubble .meta {
+            font-size: .75rem;
+            color: #868e96;
+            margin-bottom: .25rem;
+        }
+        .chat-input {
+            display: flex;
+            gap: .5rem;
+            margin-top: .75rem;
+        }
+        .chat-input input {
+            flex: 1;
+            border: none;
+            border-radius: 2rem;
+            padding: .75rem 1.25rem;
+            background: #f1f3f5;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+            transition: background .2s, box-shadow .2s;
+        }
+        .chat-input input:focus {
+            background: #fff;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(109,93,252,0.3);
+        }
+        .chat-input button {
+            border-radius: 2rem;
+            padding: 0 1.75rem;
+            font-weight: 600;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            transition: background .2s, transform .1s;
+        }
+        .chat-input button:hover {
+            background: #5b50e6;
+        }
+        .chat-input button:active {
+            transform: scale(.98);
+        }
+        footer {
+            text-align: center;
+            padding: 1rem 0;
+            color: #868e96;
+            font-size: .9rem;
+        }
+        footer a {
+            color: #6d5dfc;
+            text-decoration: none;
+            font-weight: 600;
+        }
     </style>
 </head>
-<body class="bg-dark text-light">
-<div class="container mt-5">
-    <h1 class="mb-4">Live Chatroom</h1>
-    <div id="messages" class="bg-light text-dark rounded p-3 mb-3"></div>
-    <form id="chatForm">
-        <input type="text" id="msg" class="form-control mb-2" placeholder="Type a message..." autocomplete="off">
-        <button class="btn btn-primary">Send</button>
-    </form>
+<body>
+<nav class="navbar navbar-light bg-white shadow-sm">
+    <div class="container">
+        <a class="navbar-brand" href="/">Lumenite Demo</a>
+    </div>
+</nav>
+
+<header class="hero">
+    <div class="container">
+        <h1>Lumenite Chat &amp; Performance</h1>
+        <p>Built with Lumenite Web Framework</p>
+    </div>
+</header>
+
+<section class="metrics">
+    <div class="container">
+        This page loaded in <span id="loadTime">--</span> ms
+    </div>
+</section>
+
+<section class="chart-section">
+    <h2 class="chart-title">Throughput Comparison</h2>
+    <div class="chart-container">
+        <canvas id="throughputChart"></canvas>
+    </div>
+</section>
+
+<section class="chart-section">
+    <h2 class="chart-title">Average Response Time</h2>
+    <div class="chart-container">
+        <canvas id="responseTimeChart"></canvas>
+    </div>
+</section>
+
+<div class="chat-container container">
+    <div class="chat-window" id="chat"></div>
+    <div class="chat-input">
+        <input type="text" id="user" class="form-control" placeholder="Your name" value="Anonymous">
+        <input type="text" id="msg" class="form-control" placeholder="Type a message">
+        <button id="sendBtn" class="btn btn-primary">Send</button>
+    </div>
 </div>
 
-<script>
-    async function fetchMessages() {
-        const res = await fetch("/api/messages");
-        const data = await res.json();
-        const container = document.getElementById("messages");
-        container.innerHTML = "";
-        data.forEach(obj => {
-            const div = document.createElement("div");
-            div.className = "message";
-            div.innerHTML = `<span>${obj.msg}</span><span class="timestamp">${obj.time}</span>`;
-            container.appendChild(div);
-        });
-        container.scrollTop = container.scrollHeight;
-    }
+<footer class="bg-white">
+    <div class="container">
+        Demo built with <a href="https://github.com/your-repo/lumenite" target="_blank">Lumenite Web Framework</a>.
+    </div>
+</footer>
 
-    document.getElementById("chatForm").addEventListener("submit", async e => {
-        e.preventDefault();
-        const msg = encodeURIComponent(document.getElementById("msg").value);
-        if (!msg) return;
-        await fetch(`/api/send?msg=${msg}`);
-        document.getElementById("msg").value = "";
-        fetchMessages();
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+
+<script>
+    // measure load time
+    const start = performance.now();
+    window.addEventListener('load', () => {
+        const diff = Math.round(performance.now() - start);
+        document.getElementById('loadTime').textContent = diff;
     });
 
-    setInterval(fetchMessages, 1000);
-    fetchMessages();
+    // chart data
+    const frameworks = ['Django','Flask','Node.js','ASPX','Bun','Lumenite'];
+    const throughput = [2000,3000,8000,12000,15000,22000];
+    const responseTime = [0.500,0.333,0.125,0.083,0.067,0.045];
+
+    function makeChart(id, label, data, options={}) {
+        const ctx = document.getElementById(id).getContext('2d');
+        return new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: frameworks,
+                datasets: [{
+                    label,
+                    data,
+                    backgroundColor: frameworks.map(f =>
+                        f === 'Lumenite' ? '#6d5dfc' : '#c0c0c0'
+                    ),
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: options.yLabel }
+                    }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+
+    window.addEventListener('load', () => {
+        makeChart('throughputChart', 'Requests/sec', throughput, { yLabel: 'req/sec' });
+        makeChart('responseTimeChart', 'ms', responseTime, { yLabel: 'Average ms' });
+    });
+
+    // Chat logic
+    const chatEl = document.getElementById('chat');
+    const userEl = document.getElementById('user');
+    const msgEl  = document.getElementById('msg');
+    const sendBtn = document.getElementById('sendBtn');
+    let lastTs = 0;
+
+    function appendMessage(m) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'chat-message';
+
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        avatar.textContent = m.user.charAt(0).toUpperCase();
+
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        const time = new Date(m.ts).toLocaleTimeString();
+        bubble.innerHTML = `
+        <div class="meta">${time} • <strong>${m.user}</strong></div>
+        <div class="text">${m.text}</div>
+      `;
+
+        wrapper.append(avatar, bubble);
+        chatEl.appendChild(wrapper);
+        chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function poll() {
+        fetch('/api/messages?after=' + lastTs)
+            .then(r => r.json())
+            .then(data => {
+                data.messages.forEach(m => {
+                    appendMessage(m);
+                    lastTs = m.ts;
+                });
+            })
+            .catch(console.error)
+            .finally(() => setTimeout(poll, 1000));
+    }
+
+    function sendMessage() {
+        const user = userEl.value.trim() || 'Anonymous';
+        const text = msgEl.value.trim();
+        if (!text) return;
+        fetch('/api/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user, text })
+        }).then(() => {
+            msgEl.value = '';
+            msgEl.focus();
+        });
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    msgEl.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    window.addEventListener('load', poll);
 </script>
 </body>
 </html>

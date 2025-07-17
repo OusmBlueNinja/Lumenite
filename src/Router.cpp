@@ -1,34 +1,42 @@
 #include "Router.h"
 #include <regex>
+#include <cctype>
 
 std::vector<Route> Router::routes;
 
-void Router::add(const std::string& pattern, int luaRef) {
-    routes.push_back({ pattern, luaRef });
+void Router::add(const std::string &method,
+                 const std::string &pattern,
+                 int luaRef)
+{
+    routes.push_back({method, pattern, luaRef});
 }
 
-bool Router::match(const std::string& path, int& luaRef, std::vector<std::string>& args) {
-    for (const auto& route : routes) {
-        std::string regexPattern = "^";
+bool Router::match(const std::string &method,
+                   const std::string &path,
+                   int &luaRef,
+                   std::vector<std::string> &args)
+{
+    for (auto &R: routes) {
+        if (R.method != method) continue;
+        std::string pat = "^";
         size_t i = 0;
-
-        while (i < route.pattern.size()) {
-            if (route.pattern[i] == '<') {
-                while (i < route.pattern.size() && route.pattern[i] != '>') ++i;
-                regexPattern += R"(([^/]+))";
+        while (i < R.pattern.size()) {
+            if (R.pattern[i] == '<') {
+                while (i < R.pattern.size() && R.pattern[i] != '>') ++i;
+                pat += R"(([^/]+))";
                 ++i;
             } else {
-                if (std::ispunct(route.pattern[i])) regexPattern += '\\';
-                regexPattern += route.pattern[i++];
+                if (std::ispunct(static_cast<unsigned char>(R.pattern[i])))
+                    pat += '\\';
+                pat += R.pattern[i++];
             }
         }
-
-        regexPattern += "$";
-        std::smatch match;
-        if (std::regex_match(path, match, std::regex(regexPattern))) {
-            for (size_t i = 1; i < match.size(); ++i)
-                args.push_back(match[i].str());
-            luaRef = route.luaRef;
+        pat += "$";
+        std::smatch m;
+        if (std::regex_match(path, m, std::regex(pat))) {
+            for (size_t j = 1; j < m.size(); ++j)
+                args.push_back(m[j].str());
+            luaRef = R.luaRef;
             return true;
         }
     }

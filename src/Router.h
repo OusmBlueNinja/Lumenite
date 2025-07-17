@@ -1,16 +1,24 @@
 #pragma once
 #include <string>
 #include <vector>
-#include <functional>
 
-struct Route {
+struct Route
+{
+    std::string method;
     std::string pattern;
     int luaRef;
 };
 
-namespace Router {
+namespace Router
+{
     extern std::vector<Route> routes;
 
-    void add(const std::string& pattern, int luaRef);
-    bool match(const std::string& path, int& luaRef, std::vector<std::string>& args);
+    void add(const std::string &method,
+             const std::string &pattern,
+             int luaRef);
+
+    bool match(const std::string &method,
+               const std::string &path,
+               int &luaRef,
+               std::vector<std::string> &args);
 }

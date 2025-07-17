@@ -1,18 +1,55 @@
 #pragma once
+#include "LumeniteApp.h"
 #include <string>
+#include <unordered_map>
+#include <vector>
+#include <sstream>
 
-extern "C" {
+extern "C"
+{
 #include "lua.h"
 }
 
-class Server {
+// A simple HTTP request representation
+struct HttpRequest
+{
+    std::string method;
+    std::string path;
+    std::unordered_map<std::string, std::string> headers;
+    std::unordered_map<std::string, std::string> query;
+    std::string body;
+};
+
+// A simple HTTP response builder
+struct HttpResponse
+{
+    int status = 200;
+    std::unordered_map<std::string, std::string> headers;
+    std::string body;
+
+    std::string serialize() const
+    {
+        std::ostringstream oss;
+        oss << "HTTP/1.1 " << status << " OK\r\n";
+        for (auto &[k,v]: headers)
+            oss << k << ": " << v << "\r\n";
+        oss << "\r\n" << body;
+        return oss.str();
+    }
+};
+
+class Server
+{
 public:
-    Server(int port, lua_State* L);
+    Server(int port, lua_State *L);
+
     void run();
 
 private:
     int port;
-    lua_State* L;
+    lua_State *L;
+
     static std::string receiveRequest(int clientSocket);
-    static void sendResponse(int clientSocket, int code, const std::string& contentType, const std::string& body);
+
+    static void sendResponse(int clientSocket, const std::string &out);
 };
