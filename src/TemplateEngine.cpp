@@ -282,10 +282,16 @@ std::string TemplateEngine::substitute(const std::string &text,
         size_t keyLen = varEnd - keyStart;
         std::string_view keyView = text;
         keyView = keyView.substr(keyStart, keyLen);
-        keyView = trim(keyView.data());
+        std::string key = trim(std::string(keyView));
 
-        auto it = context.find(std::string(keyView));
-        if (it != context.end()) result.append(it->second);
+
+        auto it = context.find(key);
+        if (it != context.end()) {
+            result.append(it->second);
+        } else {
+            result.append("");
+        }
+
 
         pos = varEnd + 2;
     }

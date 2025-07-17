@@ -279,20 +279,40 @@ int LumeniteApp::lua_json(lua_State *L)
     return 1;
 }
 
-// — templating —
+
 int LumeniteApp::lua_render_template_string(lua_State *L)
 {
     const char *tmpl = luaL_checkstring(L, 1);
-    luaL_checktype(L, 2, LUA_TTABLE);
-
     std::unordered_map<std::string, std::string> ctx;
-    ctx.reserve(16);
-    lua_pushnil(L);
-    while (lua_next(L, 2)) {
-        const char *k = lua_tostring(L, -2);
-        const char *v = lua_tostring(L, -1);
-        if (k && v) ctx.emplace(k, v);
-        lua_pop(L, 1);
+
+    // Second argument is optional
+    if (lua_gettop(L) >= 2 && lua_istable(L, 2)) {
+        lua_pushnil(L); // First key for lua_next
+        while (lua_next(L, 2)) {
+            // Ensure key is a string
+            if (!lua_isstring(L, -2)) {
+                lua_pop(L, 1); // Skip this entry
+                continue;
+            }
+
+            const char *k = lua_tostring(L, -2);
+            std::string value;
+
+            if (lua_isstring(L, -1)) {
+                value = lua_tostring(L, -1);
+            } else if (lua_isnumber(L, -1)) {
+                value = std::to_string(lua_tonumber(L, -1));
+            } else if (lua_isboolean(L, -1)) {
+                value = lua_toboolean(L, -1) ? "true" : "false";
+            } else if (lua_isnil(L, -1)) {
+                value = "nil";
+            } else {
+                value = "[object]";
+            }
+
+            if (k) ctx.emplace(k, value);
+            lua_pop(L, 1); // Remove value, keep key for next iteration
+        }
     }
 
     std::string out = TemplateEngine::renderFromString(tmpl, ctx);
@@ -300,19 +320,40 @@ int LumeniteApp::lua_render_template_string(lua_State *L)
     return 1;
 }
 
+
 int LumeniteApp::lua_render_template_file(lua_State *L)
 {
     const char *fn = luaL_checkstring(L, 1);
-    luaL_checktype(L, 2, LUA_TTABLE);
-
     std::unordered_map<std::string, std::string> ctx;
-    ctx.reserve(16);
-    lua_pushnil(L);
-    while (lua_next(L, 2)) {
-        const char *k = lua_tostring(L, -2);
-        const char *v = lua_tostring(L, -1);
-        if (k && v) ctx.emplace(k, v);
-        lua_pop(L, 1);
+
+    // Second argument is optional
+    if (lua_gettop(L) >= 2 && lua_istable(L, 2)) {
+        lua_pushnil(L); // First key for lua_next
+        while (lua_next(L, 2)) {
+            // Ensure key is a string
+            if (!lua_isstring(L, -2)) {
+                lua_pop(L, 1); // Skip this entry
+                continue;
+            }
+
+            const char *k = lua_tostring(L, -2);
+            std::string value;
+
+            if (lua_isstring(L, -1)) {
+                value = lua_tostring(L, -1);
+            } else if (lua_isnumber(L, -1)) {
+                value = std::to_string(lua_tonumber(L, -1));
+            } else if (lua_isboolean(L, -1)) {
+                value = lua_toboolean(L, -1) ? "true" : "false";
+            } else if (lua_isnil(L, -1)) {
+                value = "nil";
+            } else {
+                value = "[object]";
+            }
+
+            if (k) ctx.emplace(k, value);
+            lua_pop(L, 1); // Remove value, keep key for next iteration
+        }
     }
 
     std::string tmpl = TemplateEngine::loadTemplate(fn);
@@ -320,6 +361,8 @@ int LumeniteApp::lua_render_template_file(lua_State *L)
     lua_pushstring(L, out.c_str());
     return 1;
 }
+
+
 
 // — listen binding —
 int LumeniteApp::lua_listen(lua_State *L)

@@ -1,8 +1,5 @@
-
-
 app:get("/", function(req)
-    print(app.session_get("id"))
-    return app.render_template("index.html", {})
+    return app.render_template("index.html", { id = app.session_get("id") })
 end)
 
 app:get("/update/<argument>", function(req, argument)
