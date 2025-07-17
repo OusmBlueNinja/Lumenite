@@ -1,287 +1,467 @@
-{% extends "base.html" %}
-{% block title %}Chat & Performance Demo{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luminense - A lightweight C++/Lua framework</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-{% block head %}
-<style>
-    /* Hero Section */
-    .hero {
-        padding: 6rem 0 4rem;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 4rem;
-        align-items: center;
-        min-height: 80vh;
-    }
-
-    .hero-content h1 {
-        font-size: 4rem;
-        font-weight: 700;
-        line-height: 1.1;
-        margin-bottom: 1.5rem;
-        background: linear-gradient(135deg, #ffffff 0%, var(--primary) 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-
-    .hero-content p.lead {
-        font-size: 1.25rem;
-        color: var(--text-muted);
-        margin-bottom: 2rem;
-        font-weight: 400;
-    }
-
-    .cta-buttons {
-        display: flex;
-        gap: 1rem;
-        margin-bottom: 2rem;
-    }
-
-    .badges {
-        display: flex;
-        gap: 1rem;
-    }
-
-    /* Code Section */
-    .code-section {
-        position: relative;
-        animation: float 6s ease-in-out infinite;
-    }
-
-    @keyframes float {
-        0%, 100% { transform: translateY(0px); }
-        50% { transform: translateY(-10px); }
-    }
-
-    .nav-tabs {
-        display: flex;
-        gap: 0.5rem;
-        margin-bottom: 1rem;
-        border: none;
-        list-style: none;
-    }
-
-    .nav-tabs .nav-link {
-        padding: 0.75rem 1.5rem;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 8px 8px 0 0;
-        color: var(--text-muted);
-        cursor: pointer;
-        transition: all 0.3s ease;
-        text-decoration: none;
-        display: block;
-    }
-
-    .nav-tabs .nav-link.active {
-        background: var(--primary);
-        color: white;
-        border-color: var(--primary);
-    }
-
-    .nav-tabs .nav-link:hover:not(.active) {
-        background: rgba(255, 255, 255, 0.1);
-        color: var(--text);
-    }
-
-    .tab-content {
-        background: rgba(0, 0, 0, 0.4);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 0 12px 12px 12px;
-        backdrop-filter: blur(20px);
-        position: relative;
-        overflow: hidden;
-    }
-
-    .tab-content::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 40px;
-        background: linear-gradient(90deg,
-        rgba(255, 95, 109, 0.8) 0%,
-        rgba(255, 200, 61, 0.8) 33%,
-        rgba(40, 201, 55, 0.8) 66%);
-        opacity: 0.3;
-    }
-
-    .code-header {
-        padding: 1rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .window-controls {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .window-dot {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: var(--text-muted);
-        opacity: 0.6;
-    }
-
-    .window-dot:nth-child(1) { background: #ff5f56; }
-    .window-dot:nth-child(2) { background: #ffbd2e; }
-    .window-dot:nth-child(3) { background: #27ca3f; }
-
-    .copy-btn {
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        color: var(--text);
-        padding: 0.5rem 1rem;
-        border-radius: 6px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-size: 0.875rem;
-    }
-
-    .copy-btn:hover {
-        background: rgba(255, 255, 255, 0.2);
-    }
-
-    .tab-pane {
-        display: none;
-        padding: 1.5rem;
-        font-family: 'Monaco', 'Menlo', monospace;
-        font-size: 0.9rem;
-        line-height: 1.6;
-        color: #e2e8f0;
-    }
-
-    .tab-pane.fade.show.active {
-        display: block;
-    }
-
-    /* Syntax highlighting */
-    .tab-pane .keyword { color: #c792ea; }
-    .tab-pane .string { color: #c3e88d; }
-    .tab-pane .comment { color: #616161; }
-    .tab-pane .function { color: #82aaff; }
-    .tab-pane .number { color: #f78c6c; }
-    .tab-pane .operator { color: #89ddff; }
-
-    /* Animations */
-    @keyframes slideUp {
-        from {
-            opacity: 0;
-            transform: translateY(30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    .hero-content > * {
-        animation: slideUp 0.8s ease-out forwards;
-    }
-
-    .hero-content > *:nth-child(2) { animation-delay: 0.1s; }
-    .hero-content > *:nth-child(3) { animation-delay: 0.2s; }
-    .hero-content > *:nth-child(4) { animation-delay: 0.3s; }
-
-    /* Responsive */
-    @media (max-width: 768px) {
-        .hero {
-            grid-template-columns: 1fr;
-            text-align: center;
-            padding: 4rem 0;
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --accent: #f59e0b;
+            --success: #10b981;
+            --background: #0f0f23;
+            --surface: #1a1a2e;
+            --surface-light: #16213e;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --glow: rgba(99, 102, 241, 0.3);
+            --muted: #64748b;
         }
 
-        .hero-content h1 {
-            font-size: 2.5rem;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
-        .cta-buttons {
-            flex-direction: column;
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--background);
+            color: var(--text);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* Animated background */
+        .background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+            radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+            radial-gradient(circle at 40% 40%, rgba(245, 158, 11, 0.05) 0%, transparent 50%);
+        }
+
+        .background::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                    radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                    radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 50px 50px;
+            animation: float 20s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+
+        /* Container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        /* Header */
+        .header {
+            padding: 2rem 0;
+            backdrop-filter: blur(20px);
+            background: rgba(15, 15, 35, 0.8);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .nav {
+            display: flex;
+            justify-content: space-between;
             align-items: center;
         }
 
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+        }
+
+        /* Main content area */
+        .main-content {
+            min-height: calc(100vh - 120px);
+        }
+
+        /* Hero Section */
+        .hero {
+            padding: 6rem 0 4rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            align-items: center;
+            min-height: 80vh;
+        }
+
+        .hero-content h1 {
+            font-size: 4rem;
+            font-weight: 700;
+            line-height: 1.1;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #ffffff 0%, var(--primary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-content p.lead {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+            font-weight: 400;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .badges {
+            display: flex;
+            gap: 1rem;
+        }
+
+        /* Code Section */
+        .code-section {
+            position: relative;
+            animation: code-float 6s ease-in-out infinite;
+        }
+
+        @keyframes code-float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
         .nav-tabs {
-            flex-wrap: wrap;
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            border: none;
+            list-style: none;
         }
 
         .nav-tabs .nav-link {
-            flex: 1;
-            min-width: 80px;
-            text-align: center;
+            padding: 0.75rem 1.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px 8px 0 0;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: block;
         }
-    }
 
-    /* Bootstrap-like grid classes */
-    .row {
-        display: flex;
-        flex-wrap: wrap;
-        margin: 0 -1rem;
-    }
-
-    .col-md-6 {
-        flex: 0 0 50%;
-        padding: 0 1rem;
-    }
-
-    .g-4 {
-        gap: 1.5rem;
-    }
-
-    .align-items-start {
-        align-items: flex-start;
-    }
-
-    @media (max-width: 768px) {
-        .col-md-6 {
-            flex: 0 0 100%;
+        .nav-tabs .nav-link.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
         }
-    }
-</style>
-{% endblock %}
 
-{% block content %}
-<div class="container">
-    <section class="hero row g-4 align-items-start">
-        <div class="col-md-6">
-            <h1>Luminense</h1>
-            <p class="lead">A lightweight C++/Lua framework for real‑time apps.</p>
-            <div class="cta-buttons mt-4">
-                <a href="#" class="btn btn-accent btn-lg">
-                    <i class="fas fa-download"></i> Get Luminense
-                </a>
-                <a href="#" class="btn btn-outline-accent btn-lg">
-                    <i class="fas fa-shield-alt"></i> Security Support
-                </a>
-            </div>
-            <div class="badges mt-3">
-                <span class="badge bg-success me-1">v1.0.0</span>
-                <span class="badge bg-secondary">LTS</span>
-            </div>
-        </div>
+        .nav-tabs .nav-link:hover:not(.active) {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text);
+        }
 
-        <div class="col-md-6">
+        .tab-content {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0 12px 12px 12px;
+            backdrop-filter: blur(20px);
+            position: relative;
+            overflow: hidden;
+        }
+
+
+
+        .code-header {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .window-controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .window-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            opacity: 0.6;
+        }
+
+        .window-dot:nth-child(1) { background: #ff5f56; }
+        .window-dot:nth-child(2) { background: #ffbd2e; }
+        .window-dot:nth-child(3) { background: #27ca3f; }
+
+        .copy-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.875rem;
+        }
+
+        .copy-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .tab-pane {
+            display: none;
+            padding: 1.5rem;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: #e2e8f0;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        .tab-pane.show.active {
+            display: block;
+        }
+
+        /* Syntax highlighting */
+        .tab-pane .keyword { color: #c792ea; }
+        .tab-pane .string { color: #c3e88d; }
+        .tab-pane .comment { color: #616161; }
+        .tab-pane .function { color: #82aaff; }
+        .tab-pane .number { color: #f78c6c; }
+        .tab-pane .operator { color: #89ddff; }
+
+        /* Animations */
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .hero-content > * {
+            animation: slideUp 0.8s ease-out forwards;
+        }
+
+        .hero-content > *:nth-child(2) { animation-delay: 0.1s; }
+        .hero-content > *:nth-child(3) { animation-delay: 0.2s; }
+        .hero-content > *:nth-child(4) { animation-delay: 0.3s; }
+
+        /* Common button styles */
+        .btn {
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            border: none;
+            font-size: 1rem;
+        }
+
+        .btn-primary, .btn-accent {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:hover, .btn-accent:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-outline, .btn-outline-accent {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-outline:hover, .btn-outline-accent:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .btn-lg {
+            padding: 1.2rem 2.4rem;
+            font-size: 1.1rem;
+        }
+
+        /* Badge styles */
+        .badge {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: inline-block;
+        }
+
+        .badge.bg-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge.bg-secondary {
+            background: rgba(139, 92, 246, 0.2);
+            color: var(--secondary);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+
+            .container {
+                padding: 0 1rem;
+            }
+
+            .hero {
+                grid-template-columns: 1fr;
+                text-align: center;
+                padding: 4rem 0;
+            }
+
+            .hero-content h1 {
+                font-size: 2.5rem;
+            }
+
+            .cta-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .nav-tabs {
+                flex-wrap: wrap;
+            }
+
+            .nav-tabs .nav-link {
+                flex: 1;
+                min-width: 80px;
+                text-align: center;
+            }
+        }
+
+        /* Glowing effects */
+        .glow {
+            box-shadow: 0 0 20px var(--glow);
+        }
+
+        /* Utilities */
+        .me-1 { margin-right: 0.25rem; }
+        .mt-3 { margin-top: 1rem; }
+        .mt-4 { margin-top: 1.5rem; }
+        .pt-3 { padding-top: 1rem; }
+    </style>
+</head>
+<body>
+<div class="background"></div>
+
+<header class="header">
+    <div class="container">
+        <nav class="nav">
+            <div class="logo">Luminense</div>
+            <ul class="nav-links">
+                <li><a href="#docs">Docs</a></li>
+                <li><a href="#examples">Examples</a></li>
+                <li><a href="#community">Community</a></li>
+                <li><a href="#support">Support</a></li>
+            </ul>
+        </nav>
+    </div>
+</header>
+
+<main class="main-content">
+    <div class="container">
+        <section class="hero">
+            <div class="hero-content">
+                <h1>Luminense</h1>
+                <p class="lead">A lightweight C++/Lua framework for real‑time apps.</p>
+                <div class="cta-buttons mt-4">
+                    <a href="#" class="btn btn-accent btn-lg">
+                        <i class="fas fa-download"></i> Get Luminense
+                    </a>
+                    <a href="#" class="btn btn-outline-accent btn-lg">
+                        <i class="fas fa-shield-alt"></i> Security Support
+                    </a>
+                </div>
+                <div class="badges mt-3">
+                    <span class="badge bg-success me-1">v1.0.0</span>
+                    <span class="badge bg-secondary">LTS</span>
+                </div>
+            </div>
+
             <div class="code-section">
-                <ul class="nav-tabs" id="codeTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic"
-                                type="button" role="tab" onclick="showTab('basic', this)">Basic</button>
+                <ul class="nav-tabs">
+                    <li role="presentation">
+                        <button class="nav-link active" onclick="showTab('basic', this)">Basic</button>
                     </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat"
-                                type="button" role="tab" onclick="showTab('chat', this)">Chat</button>
+                    <li role="presentation">
+                        <button class="nav-link" onclick="showTab('chat', this)">Chat</button>
                     </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="json-tab" data-bs-toggle="tab" data-bs-target="#json"
-                                type="button" role="tab" onclick="showTab('json', this)">JSON API</button>
+                    <li role="presentation">
+                        <button class="nav-link" onclick="showTab('json', this)">JSON API</button>
                     </li>
                 </ul>
 
-                <div class="tab-content pt-3">
+                <div class="tab-content">
                     <div class="code-header">
                         <div class="window-controls">
                             <div class="window-dot"></div>
@@ -293,41 +473,75 @@
                         </button>
                     </div>
 
-                    <div class="tab-pane fade show active" id="basic" role="tabpanel">
+                    <div class="tab-pane show active" id="basic">
+                        <span class="comment">-- Simple HTTP server with Luminense</span>
                         <span class="keyword">app</span><span class="operator">:</span><span class="function">get</span><span class="operator">(</span><span class="string">"/"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
                         <span class="keyword">return</span> <span class="string">"Hello, world!"</span>
                         <span class="keyword">end</span><span class="operator">)</span>
 
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">listen</span><span class="operator">(</span><span class="number">5800</span><span class="operator">)</span>
-                    </div>
-                    <div class="tab-pane fade" id="chat" role="tabpanel">
+                        <span class="keyword">app</span><span class="operator">:</span><span class="function">listen</span><span class="operator">(</span><span class="number">5800</span><span class="operator">)</span></div>
+                    <div class="tab-pane" id="chat">
+                        <span class="comment">-- Real-time chat application</span>
                         <span class="keyword">local</span> <span class="keyword">messages</span> <span class="operator">=</span> <span class="operator">{}</span>
 
+                        <span class="comment">-- Serve chat page</span>
                         <span class="keyword">app</span><span class="operator">:</span><span class="function">get</span><span class="operator">(</span><span class="string">"/chat"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
-                        <span class="keyword">return</span> <span class="function">require</span><span class="operator">(</span><span class="string">"luminous.render"</span><span class="operator">)(</span><span class="string">"chat.html"</span><span class="operator">,</span> <span class="operator">{</span> <span class="keyword">msgs</span> <span class="operator">=</span> <span class="keyword">messages</span> <span class="operator">})</span>
+                        <span class="keyword">return</span> <span class="function">render</span><span class="operator">(</span><span class="string">"chat.html"</span><span class="operator">,</span> <span class="operator">{</span>
+                        <span class="keyword">messages</span> <span class="operator">=</span> <span class="keyword">messages</span><span class="operator">,</span>
+                        <span class="keyword">user_count</span> <span class="operator">=</span> <span class="function">#sessions</span>
+                        <span class="operator">})</span>
                         <span class="keyword">end</span><span class="operator">)</span>
 
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">post</span><span class="operator">(</span><span class="string">"/chat"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
-                        <span class="keyword">table</span><span class="operator">.</span><span class="function">insert</span><span class="operator">(</span><span class="keyword">messages</span><span class="operator">,</span> <span class="keyword">req</span><span class="operator">.</span><span class="keyword">json</span><span class="operator">.</span><span class="keyword">text</span><span class="operator">)</span>
-                        <span class="keyword">return</span> <span class="operator">{</span> <span class="keyword">status</span><span class="operator">=</span><span class="number">201</span> <span class="operator">}</span>
+                        <span class="comment">-- Handle new messages</span>
+                        <span class="keyword">app</span><span class="operator">:</span><span class="function">post</span><span class="operator">(</span><span class="string">"/chat/send"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
+                        <span class="keyword">local</span> <span class="keyword">message</span> <span class="operator">=</span> <span class="operator">{</span>
+                        <span class="keyword">text</span> <span class="operator">=</span> <span class="keyword">req</span><span class="operator">.</span><span class="keyword">json</span><span class="operator">.</span><span class="keyword">text</span><span class="operator">,</span>
+                        <span class="keyword">user</span> <span class="operator">=</span> <span class="keyword">req</span><span class="operator">.</span><span class="keyword">session</span><span class="operator">.</span><span class="keyword">username</span><span class="operator">,</span>
+                        <span class="keyword">timestamp</span> <span class="operator">=</span> <span class="function">os.time</span><span class="operator">()</span>
+                        <span class="operator">}</span>
+
+                        <span class="keyword">table</span><span class="operator">.</span><span class="function">insert</span><span class="operator">(</span><span class="keyword">messages</span><span class="operator">,</span> <span class="keyword">message</span><span class="operator">)</span>
+                        <span class="function">broadcast</span><span class="operator">(</span><span class="string">"new_message"</span><span class="operator">,</span> <span class="keyword">message</span><span class="operator">)</span>
+
+                        <span class="keyword">return</span> <span class="operator">{</span> <span class="keyword">success</span> <span class="operator">=</span> <span class="keyword">true</span> <span class="operator">}</span>
                         <span class="keyword">end</span><span class="operator">)</span>
 
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">listen</span><span class="operator">(</span><span class="number">5800</span><span class="operator">)</span>
-                    </div>
-                    <div class="tab-pane fade" id="json" role="tabpanel">
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">post</span><span class="operator">(</span><span class="string">"/api/data"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
-                        <span class="keyword">local</span> <span class="keyword">data</span> <span class="operator">=</span> <span class="keyword">req</span><span class="operator">.</span><span class="keyword">json</span>
-                        <span class="comment">-- process data...</span>
-                        <span class="keyword">return</span> <span class="keyword">app</span><span class="operator">.</span><span class="function">json</span><span class="operator">({</span> <span class="keyword">ok</span><span class="operator">=</span><span class="keyword">true</span><span class="operator">,</span> <span class="keyword">received</span><span class="operator">=</span><span class="keyword">data</span> <span class="operator">})</span>
+                        <span class="keyword">app</span><span class="operator">:</span><span class="function">listen</span><span class="operator">(</span><span class="number">5800</span><span class="operator">)</span></div>
+                    <div class="tab-pane" id="json">
+                        <span class="comment">-- RESTful API with JSON responses</span>
+                        <span class="keyword">local</span> <span class="keyword">users</span> <span class="operator">=</span> <span class="operator">{}</span>
+
+                        <span class="comment">-- Create user endpoint</span>
+                        <span class="keyword">app</span><span class="operator">:</span><span class="function">post</span><span class="operator">(</span><span class="string">"/api/users"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
+                        <span class="keyword">local</span> <span class="keyword">user_data</span> <span class="operator">=</span> <span class="keyword">req</span><span class="operator">.</span><span class="keyword">json</span>
+
+                        <span class="keyword">if</span> <span class="keyword">not</span> <span class="keyword">user_data</span><span class="operator">.</span><span class="keyword">email</span> <span class="keyword">or</span> <span class="keyword">not</span> <span class="keyword">user_data</span><span class="operator">.</span><span class="keyword">name</span> <span class="keyword">then</span>
+                        <span class="keyword">return</span> <span class="function">json_error</span><span class="operator">(</span><span class="string">"Missing required fields"</span><span class="operator">,</span> <span class="number">400</span><span class="operator">)</span>
+                        <span class="keyword">end</span>
+
+                        <span class="keyword">local</span> <span class="keyword">user</span> <span class="operator">=</span> <span class="operator">{</span>
+                        <span class="keyword">id</span> <span class="operator">=</span> <span class="function">generate_id</span><span class="operator">(),</span>
+                        <span class="keyword">name</span> <span class="operator">=</span> <span class="keyword">user_data</span><span class="operator">.</span><span class="keyword">name</span><span class="operator">,</span>
+                        <span class="keyword">email</span> <span class="operator">=</span> <span class="keyword">user_data</span><span class="operator">.</span><span class="keyword">email</span><span class="operator">,</span>
+                        <span class="keyword">created_at</span> <span class="operator">=</span> <span class="function">os.time</span><span class="operator">()</span>
+                        <span class="operator">}</span>
+
+                        <span class="keyword">users</span><span class="operator">[</span><span class="keyword">user</span><span class="operator">.</span><span class="keyword">id</span><span class="operator">]</span> <span class="operator">=</span> <span class="keyword">user</span>
+
+                        <span class="keyword">return</span> <span class="function">json_response</span><span class="operator">(</span><span class="keyword">user</span><span class="operator">,</span> <span class="number">201</span><span class="operator">)</span>
                         <span class="keyword">end</span><span class="operator">)</span>
 
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">listen</span><span class="operator">(</span><span class="number">5800</span><span class="operator">)</span>
-                    </div>
+                        <span class="comment">-- Get all users</span>
+                        <span class="keyword">app</span><span class="operator">:</span><span class="function">get</span><span class="operator">(</span><span class="string">"/api/users"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
+                        <span class="keyword">return</span> <span class="function">json_response</span><span class="operator">(</span><span class="function">table_values</span><span class="operator">(</span><span class="keyword">users</span><span class="operator">))</span>
+                        <span class="keyword">end</span><span class="operator">)</span>
+
+                        <span class="keyword">app</span><span class="operator">:</span><span class="function">listen</span><span class="operator">(</span><span class="number">5800</span><span class="operator">)</span></div>
                 </div>
             </div>
-        </div>
-    </section>
-</div>
+        </section>
+    </div>
+</main>
 
 <script>
     // Tab switching functionality
@@ -356,25 +570,68 @@
         if (activeTab) {
             const text = activeTab.textContent.trim();
 
-            navigator.clipboard.writeText(text).then(() => {
-                const btn = document.querySelector('.copy-btn');
-                const originalHTML = btn.innerHTML;
-                btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-                setTimeout(() => {
-                    btn.innerHTML = originalHTML;
-                }, 2000);
-            }).catch(err => {
-                console.error('Failed to copy: ', err);
-            });
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showCopySuccess();
+                }).catch(err => {
+                    console.error('Failed to copy: ', err);
+                    fallbackCopy(text);
+                });
+            } else {
+                fallbackCopy(text);
+            }
         }
     }
 
-    // Initialize first tab as active
-    document.addEventListener('DOMContentLoaded', function() {
-        const firstTab = document.querySelector('.tab-pane');
-        if (firstTab) {
-            firstTab.classList.add('show', 'active');
+    function showCopySuccess() {
+        const btn = document.querySelector('.copy-btn');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        setTimeout(() => {
+            btn.innerHTML = originalHTML;
+        }, 2000);
+    }
+
+    function fallbackCopy(text) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showCopySuccess();
+    }
+
+    // Parallax mouse effect
+    document.addEventListener('mousemove', (e) => {
+        const x = (e.clientX - window.innerWidth / 2) / 50;
+        const y = (e.clientY - window.innerHeight / 2) / 50;
+        const background = document.querySelector('.background');
+        if (background) {
+            background.style.transform = `translate(${x}px, ${y}px)`;
         }
     });
+
+    // Smooth scrolling for navigation links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+    });
+
+    // Add glow effect on button hover
+    document.querySelectorAll('.btn-primary, .btn-accent').forEach(btn => {
+        btn.addEventListener('mouseenter', () => {
+            btn.classList.add('glow');
+        });
+        btn.addEventListener('mouseleave', () => {
+            btn.classList.remove('glow');
+        });
+    });
 </script>
-{% endblock %}
+</body>
+</html>
