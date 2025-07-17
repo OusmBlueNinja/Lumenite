@@ -177,7 +177,7 @@
         .nav-tabs {
             display: flex;
             gap: 0.5rem;
-            margin-bottom: 1rem;
+            margin-bottom: 0;
             border: none;
             list-style: none;
         }
@@ -192,17 +192,25 @@
             transition: all 0.3s ease;
             text-decoration: none;
             display: block;
+            position: relative;
+            border-bottom: none;
+            transform: translateY(1px);
         }
 
         .nav-tabs .nav-link.active {
-            background: var(--primary);
+            background: rgba(0, 0, 0, 0.4);
             color: white;
-            border-color: var(--primary);
+            border-color: rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.4);
+            transform: translateY(0);
+            z-index: 10;
         }
 
         .nav-tabs .nav-link:hover:not(.active) {
             background: rgba(255, 255, 255, 0.1);
             color: var(--text);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }
 
         .tab-content {
@@ -212,6 +220,7 @@
             backdrop-filter: blur(20px);
             position: relative;
             overflow: hidden;
+            margin-top: -1px;
         }
 
 
@@ -254,30 +263,85 @@
 
         .copy-btn:hover {
             background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
         }
 
-        .tab-pane {
-            display: none;
+        .copy-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .code-window {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(20px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .code-content {
             padding: 1.5rem;
-            font-family: 'Monaco', 'Menlo', monospace;
-            font-size: 0.9rem;
+            font-family: 'Monaco', 'Menlo', 'SF Mono', monospace;
+            font-size: 0.95rem;
             line-height: 1.6;
             color: #e2e8f0;
-            white-space: pre-wrap;
+            white-space: pre;
             overflow-x: auto;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, rgba(0,0,0,0.6) 0%, rgba(15,15,35,0.8) 100%);
+            position: relative;
+            text-align: left;
         }
 
-        .tab-pane.show.active {
-            display: block;
+        .code-content::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background:
+                    radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 50%),
+                    radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.05) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
         }
 
-        /* Syntax highlighting */
-        .tab-pane .keyword { color: #c792ea; }
-        .tab-pane .string { color: #c3e88d; }
-        .tab-pane .comment { color: #616161; }
-        .tab-pane .function { color: #82aaff; }
-        .tab-pane .number { color: #f78c6c; }
-        .tab-pane .operator { color: #89ddff; }
+        .code-content > * {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Enhanced syntax highlighting with more vibrant colors */
+        .code-content .keyword {
+            color: #ff79c6;
+            font-weight: 600;
+            text-shadow: 0 0 10px rgba(255, 121, 198, 0.3);
+        }
+        .code-content .string {
+            color: #50fa7b;
+            text-shadow: 0 0 8px rgba(80, 250, 123, 0.2);
+        }
+        .code-content .comment {
+            color: #6272a4;
+            font-style: italic;
+            text-shadow: 0 0 5px rgba(98, 114, 164, 0.3);
+        }
+        .code-content .function {
+            color: #8be9fd;
+            font-weight: 500;
+            text-shadow: 0 0 8px rgba(139, 233, 253, 0.2);
+        }
+        .code-content .number {
+            color: #bd93f9;
+            text-shadow: 0 0 8px rgba(189, 147, 249, 0.2);
+        }
+        .code-content .operator {
+            color: #ff6ac1;
+            font-weight: 500;
+        }
 
         /* Animations */
         @keyframes slideUp {
@@ -449,19 +513,7 @@
             </div>
 
             <div class="code-section">
-                <ul class="nav-tabs">
-                    <li role="presentation">
-                        <button class="nav-link active" onclick="showTab('basic', this)">Basic</button>
-                    </li>
-                    <li role="presentation">
-                        <button class="nav-link" onclick="showTab('chat', this)">Chat</button>
-                    </li>
-                    <li role="presentation">
-                        <button class="nav-link" onclick="showTab('json', this)">JSON API</button>
-                    </li>
-                </ul>
-
-                <div class="tab-content">
+                <div class="code-window">
                     <div class="code-header">
                         <div class="window-controls">
                             <div class="window-dot"></div>
@@ -473,70 +525,11 @@
                         </button>
                     </div>
 
-                    <div class="tab-pane show active" id="basic">
-                        <span class="comment">-- Simple HTTP server with Luminense</span>
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">get</span><span class="operator">(</span><span class="string">"/"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
-                        <span class="keyword">return</span> <span class="string">"Hello, world!"</span>
+                    <div class="code-content"><span class="keyword">app</span><span class="operator">:</span><span class="function">get</span><span class="operator">(</span><span class="string">"/"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
+                        <span class="keyword">return</span> <span class="keyword">app</span><span class="operator">.</span><span class="function">render_template</span><span class="operator">(</span><span class="string">"index.html"</span><span class="operator">,</span> <span class="operator">{}</span><span class="operator">)</span>
                         <span class="keyword">end</span><span class="operator">)</span>
 
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">listen</span><span class="operator">(</span><span class="number">5800</span><span class="operator">)</span></div>
-                    <div class="tab-pane" id="chat">
-                        <span class="comment">-- Real-time chat application</span>
-                        <span class="keyword">local</span> <span class="keyword">messages</span> <span class="operator">=</span> <span class="operator">{}</span>
-
-                        <span class="comment">-- Serve chat page</span>
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">get</span><span class="operator">(</span><span class="string">"/chat"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
-                        <span class="keyword">return</span> <span class="function">render</span><span class="operator">(</span><span class="string">"chat.html"</span><span class="operator">,</span> <span class="operator">{</span>
-                        <span class="keyword">messages</span> <span class="operator">=</span> <span class="keyword">messages</span><span class="operator">,</span>
-                        <span class="keyword">user_count</span> <span class="operator">=</span> <span class="function">#sessions</span>
-                        <span class="operator">})</span>
-                        <span class="keyword">end</span><span class="operator">)</span>
-
-                        <span class="comment">-- Handle new messages</span>
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">post</span><span class="operator">(</span><span class="string">"/chat/send"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
-                        <span class="keyword">local</span> <span class="keyword">message</span> <span class="operator">=</span> <span class="operator">{</span>
-                        <span class="keyword">text</span> <span class="operator">=</span> <span class="keyword">req</span><span class="operator">.</span><span class="keyword">json</span><span class="operator">.</span><span class="keyword">text</span><span class="operator">,</span>
-                        <span class="keyword">user</span> <span class="operator">=</span> <span class="keyword">req</span><span class="operator">.</span><span class="keyword">session</span><span class="operator">.</span><span class="keyword">username</span><span class="operator">,</span>
-                        <span class="keyword">timestamp</span> <span class="operator">=</span> <span class="function">os.time</span><span class="operator">()</span>
-                        <span class="operator">}</span>
-
-                        <span class="keyword">table</span><span class="operator">.</span><span class="function">insert</span><span class="operator">(</span><span class="keyword">messages</span><span class="operator">,</span> <span class="keyword">message</span><span class="operator">)</span>
-                        <span class="function">broadcast</span><span class="operator">(</span><span class="string">"new_message"</span><span class="operator">,</span> <span class="keyword">message</span><span class="operator">)</span>
-
-                        <span class="keyword">return</span> <span class="operator">{</span> <span class="keyword">success</span> <span class="operator">=</span> <span class="keyword">true</span> <span class="operator">}</span>
-                        <span class="keyword">end</span><span class="operator">)</span>
-
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">listen</span><span class="operator">(</span><span class="number">5800</span><span class="operator">)</span></div>
-                    <div class="tab-pane" id="json">
-                        <span class="comment">-- RESTful API with JSON responses</span>
-                        <span class="keyword">local</span> <span class="keyword">users</span> <span class="operator">=</span> <span class="operator">{}</span>
-
-                        <span class="comment">-- Create user endpoint</span>
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">post</span><span class="operator">(</span><span class="string">"/api/users"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
-                        <span class="keyword">local</span> <span class="keyword">user_data</span> <span class="operator">=</span> <span class="keyword">req</span><span class="operator">.</span><span class="keyword">json</span>
-
-                        <span class="keyword">if</span> <span class="keyword">not</span> <span class="keyword">user_data</span><span class="operator">.</span><span class="keyword">email</span> <span class="keyword">or</span> <span class="keyword">not</span> <span class="keyword">user_data</span><span class="operator">.</span><span class="keyword">name</span> <span class="keyword">then</span>
-                        <span class="keyword">return</span> <span class="function">json_error</span><span class="operator">(</span><span class="string">"Missing required fields"</span><span class="operator">,</span> <span class="number">400</span><span class="operator">)</span>
-                        <span class="keyword">end</span>
-
-                        <span class="keyword">local</span> <span class="keyword">user</span> <span class="operator">=</span> <span class="operator">{</span>
-                        <span class="keyword">id</span> <span class="operator">=</span> <span class="function">generate_id</span><span class="operator">(),</span>
-                        <span class="keyword">name</span> <span class="operator">=</span> <span class="keyword">user_data</span><span class="operator">.</span><span class="keyword">name</span><span class="operator">,</span>
-                        <span class="keyword">email</span> <span class="operator">=</span> <span class="keyword">user_data</span><span class="operator">.</span><span class="keyword">email</span><span class="operator">,</span>
-                        <span class="keyword">created_at</span> <span class="operator">=</span> <span class="function">os.time</span><span class="operator">()</span>
-                        <span class="operator">}</span>
-
-                        <span class="keyword">users</span><span class="operator">[</span><span class="keyword">user</span><span class="operator">.</span><span class="keyword">id</span><span class="operator">]</span> <span class="operator">=</span> <span class="keyword">user</span>
-
-                        <span class="keyword">return</span> <span class="function">json_response</span><span class="operator">(</span><span class="keyword">user</span><span class="operator">,</span> <span class="number">201</span><span class="operator">)</span>
-                        <span class="keyword">end</span><span class="operator">)</span>
-
-                        <span class="comment">-- Get all users</span>
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">get</span><span class="operator">(</span><span class="string">"/api/users"</span><span class="operator">,</span> <span class="keyword">function</span><span class="operator">(</span><span class="keyword">req</span><span class="operator">)</span>
-                        <span class="keyword">return</span> <span class="function">json_response</span><span class="operator">(</span><span class="function">table_values</span><span class="operator">(</span><span class="keyword">users</span><span class="operator">))</span>
-                        <span class="keyword">end</span><span class="operator">)</span>
-
-                        <span class="keyword">app</span><span class="operator">:</span><span class="function">listen</span><span class="operator">(</span><span class="number">5800</span><span class="operator">)</span></div>
+                        <span class="keyword">app</span><span class="operator">.</span><span class="function">listen</span><span class="operator">(</span><span class="number">8080</span><span class="operator">)</span></div>
                 </div>
             </div>
         </section>
@@ -544,31 +537,11 @@
 </main>
 
 <script>
-    // Tab switching functionality
-    function showTab(tabName, button) {
-        // Hide all tab panes
-        document.querySelectorAll('.tab-pane').forEach(pane => {
-            pane.classList.remove('show', 'active');
-        });
-
-        // Remove active class from all buttons
-        document.querySelectorAll('.nav-link').forEach(btn => {
-            btn.classList.remove('active');
-        });
-
-        // Show selected tab and mark button as active
-        const targetTab = document.getElementById(tabName);
-        if (targetTab) {
-            targetTab.classList.add('show', 'active');
-        }
-        button.classList.add('active');
-    }
-
-    // Copy code functionality
+    // Enhanced copy functionality with better feedback
     function copyCode() {
-        const activeTab = document.querySelector('.tab-pane.active');
-        if (activeTab) {
-            const text = activeTab.textContent.trim();
+        const codeContent = document.querySelector('.code-content');
+        if (codeContent) {
+            const text = codeContent.textContent.trim();
 
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(text).then(() => {
@@ -586,9 +559,11 @@
     function showCopySuccess() {
         const btn = document.querySelector('.copy-btn');
         const originalHTML = btn.innerHTML;
+        btn.style.background = 'rgba(16, 185, 129, 0.3)';
         btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
         setTimeout(() => {
             btn.innerHTML = originalHTML;
+            btn.style.background = '';
         }, 2000);
     }
 
@@ -602,7 +577,7 @@
         showCopySuccess();
     }
 
-    // Parallax mouse effect
+    // Enhanced parallax mouse effect with code section interaction
     document.addEventListener('mousemove', (e) => {
         const x = (e.clientX - window.innerWidth / 2) / 50;
         const y = (e.clientY - window.innerHeight / 2) / 50;
@@ -610,7 +585,69 @@
         if (background) {
             background.style.transform = `translate(${x}px, ${y}px)`;
         }
+
+        // Add subtle tilt to code section based on mouse position
+        const codeSection = document.querySelector('.code-section');
+        if (codeSection) {
+            const rect = codeSection.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const deltaX = (e.clientX - centerX) / 30;
+            const deltaY = (e.clientY - centerY) / 30;
+
+            codeSection.style.transform = `perspective(1000px) rotateY(${deltaX}deg) rotateX(${-deltaY}deg)`;
+        }
     });
+
+    // Reset code section transform when mouse leaves
+    document.addEventListener('mouseleave', () => {
+        const codeSection = document.querySelector('.code-section');
+        if (codeSection) {
+            codeSection.style.transform = '';
+        }
+    });
+
+    // Add ripple effect to copy button
+    document.querySelector('.copy-btn').addEventListener('click', function(e) {
+        const ripple = document.createElement('span');
+        const rect = this.getBoundingClientRect();
+        const size = Math.max(rect.width, rect.height);
+        const x = e.clientX - rect.left - size / 2;
+        const y = e.clientY - rect.top - size / 2;
+
+        ripple.style.cssText = `
+            position: absolute;
+            width: ${size}px;
+            height: ${size}px;
+            left: ${x}px;
+            top: ${y}px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: scale(0);
+            animation: ripple 0.6s linear;
+            pointer-events: none;
+        `;
+
+        this.style.position = 'relative';
+        this.style.overflow = 'hidden';
+        this.appendChild(ripple);
+
+        setTimeout(() => {
+            ripple.remove();
+        }, 600);
+    });
+
+    // Add ripple animation
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes ripple {
+            to {
+                transform: scale(4);
+                opacity: 0;
+            }
+        }
+    `;
+    document.head.appendChild(style);
 
     // Smooth scrolling for navigation links
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {

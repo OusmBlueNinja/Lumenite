@@ -1,5 +1,5 @@
 
-app.get("/", function(req)
+app:get("/", function(req)
     return app.render_template("index.html", {})
 end)
 
