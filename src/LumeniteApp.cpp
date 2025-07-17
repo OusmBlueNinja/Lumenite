@@ -319,7 +319,7 @@ int LumeniteApp::lua_render_template_string(lua_State *L)
         ctx[lua_tostring(L, -2)] = lua_tostring(L, -1);
         lua_pop(L, 1);
     }
-    std::string out = TemplateEngine::render(tmpl, ctx);
+    std::string out = TemplateEngine::renderFromString(tmpl, ctx);
     lua_pushstring(L, out.c_str());
     return 1;
 }
@@ -335,7 +335,7 @@ int LumeniteApp::lua_render_template_file(lua_State *L)
         ctx[lua_tostring(L, -2)] = lua_tostring(L, -1);
         lua_pop(L, 1);
     }
-    std::string out = TemplateEngine::render(tmpl, ctx);
+    std::string out = TemplateEngine::renderFromString(tmpl, ctx);
     lua_pushstring(L, out.c_str());
     return 1;
 }
