@@ -1,4 +1,3 @@
-// LumeniteApp.cpp
 #include "LumeniteApp.h"
 #include "Server.h"            // for HttpRequest/HttpResponse
 #include "TemplateEngine.h"
@@ -346,7 +345,7 @@ int LumeniteApp::lua_listen(lua_State *L)
     int nargs = lua_gettop(L), port;
     if (nargs == 1 && lua_isinteger(L, 1)) port = lua_tointeger(L, 1);
     else if (nargs >= 2 && lua_isinteger(L, 2)) port = lua_tointeger(L, 2);
-    else return luaL_error(L, "listen(port) expected");
+    else return luaL_error(L, "expected a integer port as argument");
     Server srv(port, L);
     srv.run();
     return 0;
