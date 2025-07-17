@@ -4,11 +4,36 @@
 
 std::vector<Route> Router::routes;
 
+static std::string buildRegexPattern(const std::string &pattern)
+{
+    std::string pat = "^";
+    pat.reserve(pattern.size() * 2); // avoid repeated reallocation
+
+    for (size_t i = 0; i < pattern.size();) {
+        if (pattern[i] == '<') {
+            // skip until closing >
+            while (i < pattern.size() && pattern[i] != '>') ++i;
+            ++i; // skip '>'
+            pat += R"(([^/]+))";
+        } else {
+            if (std::ispunct(static_cast<unsigned char>(pattern[i]))) {
+                pat += '\\';
+            }
+            pat += pattern[i++];
+        }
+    }
+
+    pat += '$';
+    return pat;
+}
+
 void Router::add(const std::string &method,
                  const std::string &pattern,
                  int luaRef)
 {
-    routes.push_back({method, pattern, luaRef});
+    std::string regexStr = buildRegexPattern(pattern);
+    std::regex compiled(regexStr);
+    routes.push_back({method, pattern, std::move(compiled), luaRef});
 }
 
 bool Router::match(const std::string &method,
@@ -16,26 +41,16 @@ bool Router::match(const std::string &method,
                    int &luaRef,
                    std::vector<std::string> &args)
 {
-    for (auto &R: routes) {
+    for (const auto &R: routes) {
         if (R.method != method) continue;
-        std::string pat = "^";
-        size_t i = 0;
-        while (i < R.pattern.size()) {
-            if (R.pattern[i] == '<') {
-                while (i < R.pattern.size() && R.pattern[i] != '>') ++i;
-                pat += R"(([^/]+))";
-                ++i;
-            } else {
-                if (std::ispunct(static_cast<unsigned char>(R.pattern[i])))
-                    pat += '\\';
-                pat += R.pattern[i++];
-            }
-        }
-        pat += "$";
+
         std::smatch m;
-        if (std::regex_match(path, m, std::regex(pat))) {
+        if (std::regex_match(path, m, R.compiled)) {
+            args.clear();
+            args.reserve(m.size() - 1);
             for (size_t j = 1; j < m.size(); ++j)
-                args.push_back(m[j].str());
+                args.emplace_back(m[j].str());
+
             luaRef = R.luaRef;
             return true;
         }

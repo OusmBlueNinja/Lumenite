@@ -58,8 +58,6 @@ std::string TemplateEngine::render(const std::string &templateName,
 }
 
 
-
-
 std::string TemplateEngine::renderFromString(const std::string &templateText,
                                              const std::unordered_map<std::string, std::string> &context)
 {
@@ -74,15 +72,16 @@ std::string TemplateEngine::renderFromString(const std::string &templateText,
         size_t extendsPos = workingContent.find("{% extends");
         if (extendsPos != std::string::npos) {
             size_t quoteStart = workingContent.find('"', extendsPos);
-            size_t quoteEnd = (quoteStart != std::string::npos) ? workingContent.find('"', quoteStart + 1) : std::string::npos;
+            size_t quoteEnd = (quoteStart != std::string::npos)
+                                  ? workingContent.find('"', quoteStart + 1)
+                                  : std::string::npos;
             size_t endTag = (quoteEnd != std::string::npos) ? workingContent.find("%}", quoteEnd) : std::string::npos;
 
             // Validate structure
             if (quoteStart != std::string::npos &&
                 quoteEnd != std::string::npos &&
                 endTag != std::string::npos &&
-                quoteStart < quoteEnd && quoteEnd < endTag)
-            {
+                quoteStart < quoteEnd && quoteEnd < endTag) {
                 parentFile = workingContent.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
                 workingContent.erase(extendsPos, endTag + 2 - extendsPos);
 
@@ -120,7 +119,6 @@ std::string TemplateEngine::renderFromString(const std::string &templateText,
 }
 
 
-
 std::string TemplateEngine::loadTemplate(const std::string &filename)
 {
     std::string fullPath = getFullPath(filename);
@@ -135,29 +133,28 @@ std::string TemplateEngine::loadTemplate(const std::string &filename)
         }
     }
 
-    std::ifstream file(fullPath, std::ios::binary);
+    std::ifstream file(fullPath, std::ios::in | std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         throw std::runtime_error("Template not found: " + filename);
     }
 
-    file.seekg(0, std::ios::end);
-    size_t fileSize = file.tellg();
+    std::streamsize size = file.tellg();
     file.seekg(0, std::ios::beg);
 
-    std::string content;
-    content.reserve(fileSize);
-    content.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    std::string content(size, '\0');
+    file.read(&content[0], size);
 
     if (config_.enableCache) {
         std::lock_guard<std::mutex> lock(cacheMutex_);
         if (templateCache_.size() >= config_.maxCacheSize) {
             evictLRU();
         }
-        templateCache_[fullPath] = {content, std::chrono::steady_clock::now(), true};
+        templateCache_[fullPath] = {std::move(content), std::chrono::steady_clock::now(), true};
     }
 
     return content;
 }
+
 
 std::string TemplateEngine::processIncludes(const std::string &text, std::vector<std::string> &includeStack)
 {
@@ -267,22 +264,27 @@ std::string TemplateEngine::substitute(const std::string &text,
                                        const std::unordered_map<std::string, std::string> &context)
 {
     std::string result;
-    result.reserve(text.length() * 1.5);
+    result.reserve(text.size() + (text.size() >> 2)); // ~1.25x
 
     size_t pos = 0;
-    while (pos < text.length()) {
+    while (true) {
         size_t varStart = text.find("{{", pos);
         if (varStart == std::string::npos) {
-            result.append(text, pos, text.length() - pos);
+            result.append(text, pos, text.size() - pos);
             break;
         }
 
         result.append(text, pos, varStart - pos);
         size_t varEnd = text.find("}}", varStart);
-        if (varEnd == std::string::npos) throw std::runtime_error("Malformed variable syntax");
+        if (varEnd == std::string::npos) break; // malformed
 
-        std::string varName = trim(text.substr(varStart + 2, varEnd - varStart - 2));
-        auto it = context.find(varName);
+        size_t keyStart = varStart + 2;
+        size_t keyLen = varEnd - keyStart;
+        std::string_view keyView = text;
+        keyView = keyView.substr(keyStart, keyLen);
+        keyView = trim(keyView.data());
+
+        auto it = context.find(std::string(keyView));
         if (it != context.end()) result.append(it->second);
 
         pos = varEnd + 2;
@@ -290,6 +292,7 @@ std::string TemplateEngine::substitute(const std::string &text,
 
     return result;
 }
+
 
 std::string TemplateEngine::trim(const std::string &str)
 {
