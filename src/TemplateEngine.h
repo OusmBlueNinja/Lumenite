@@ -5,6 +5,14 @@
 #include <mutex>
 #include <chrono>
 
+
+extern "C" {
+#include "lua.h"
+#include "lauxlib.h"
+}
+
+
+
 class TemplateEngine
 {
 public:
@@ -40,7 +48,12 @@ public:
     static std::string renderFromString(const std::string &templateText,
                                         const std::unordered_map<std::string, std::string> &context);
 
+    static void registerLuaFilter(const std::string &name, lua_State *L, int funcIndex);
+
 private:
+    static lua_State *luaState_;
+    static std::unordered_map<std::string, int> luaFilters_;
+
     static Config config_;
     static std::mutex cacheMutex_;
     static std::unordered_map<std::string, CacheEntry> templateCache_;
@@ -54,6 +67,9 @@ private:
 
     static void injectBlocks(std::string &parent,
                              const std::unordered_map<std::string, std::string> &childBlocks);
+
+    static std::string processConditionals(const std::string &text,
+                                           const std::unordered_map<std::string, std::string> &context);
 
     static std::string substitute(const std::string &text,
                                   const std::unordered_map<std::string, std::string> &context);

@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <stdexcept>
 
+lua_State *TemplateEngine::luaState_ = nullptr;
+std::unordered_map<std::string, int> TemplateEngine::luaFilters_;
+
 
 TemplateEngine::Config TemplateEngine::config_;
 std::mutex TemplateEngine::cacheMutex_;
@@ -34,6 +37,23 @@ void TemplateEngine::clearCache()
     templateCache_.clear();
     compiledCache_.clear();
 }
+
+
+void TemplateEngine::registerLuaFilter(const std::string &name, lua_State *L, int funcIndex)
+{
+    if (!lua_isfunction(L, funcIndex)) {
+        throw std::runtime_error("Expected a function for filter: " + name);
+    }
+
+    lua_pushvalue(L, funcIndex); // copy the function
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX); // store in Lua registry
+    luaFilters_[name] = ref;
+
+    if (!luaState_) {
+        luaState_ = L;
+    }
+}
+
 
 std::string TemplateEngine::render(const std::string &templateName,
                                    const std::unordered_map<std::string, std::string> &context)
@@ -111,10 +131,11 @@ std::string TemplateEngine::renderFromString(const std::string &templateText,
             result = workingContent;
         }
 
+        result = processConditionals(result, context);
         return substitute(result, context);
     } catch (const std::exception &e) {
         std::cerr << "Template rendering error: " << e.what() << std::endl;
-        return "";
+        return "<h1>500 Server Error</h1>";
     }
 }
 
@@ -260,11 +281,50 @@ void TemplateEngine::injectBlocks(std::string &parent,
     }
 }
 
+
+std::string TemplateEngine::processConditionals(const std::string &text,
+                                                const std::unordered_map<std::string, std::string> &context)
+{
+    std::string result;
+    size_t pos = 0;
+    while (pos < text.length()) {
+        size_t ifStart = text.find("{% if ", pos);
+        if (ifStart == std::string::npos) {
+            result.append(text, pos, text.size() - pos);
+            break;
+        }
+
+        result.append(text, pos, ifStart - pos);
+        size_t condStart = ifStart + 6;
+        size_t condEnd = text.find("%}", condStart);
+        if (condEnd == std::string::npos) throw std::runtime_error("Malformed if statement");
+
+        std::string condition = trim(text.substr(condStart, condEnd - condStart));
+        size_t endifPos = text.find("{% endif %}", condEnd);
+        if (endifPos == std::string::npos) throw std::runtime_error("Missing {% endif %}");
+
+        std::string block = text.substr(condEnd + 2, endifPos - condEnd - 2);
+
+        bool show = context.count(condition) &&
+                    context.at(condition) != "" &&
+                    context.at(condition) != "false" &&
+                    context.at(condition) != "0";
+
+        if (show) {
+            result.append(block);
+        }
+
+        pos = endifPos + 12;
+    }
+
+    return result;
+}
+
 std::string TemplateEngine::substitute(const std::string &text,
                                        const std::unordered_map<std::string, std::string> &context)
 {
     std::string result;
-    result.reserve(text.size() + (text.size() >> 2)); // ~1.25x
+    result.reserve(text.size() + (text.size() >> 2));
 
     size_t pos = 0;
     while (true) {
@@ -276,23 +336,53 @@ std::string TemplateEngine::substitute(const std::string &text,
 
         result.append(text, pos, varStart - pos);
         size_t varEnd = text.find("}}", varStart);
-        if (varEnd == std::string::npos) break; // malformed
+        if (varEnd == std::string::npos) break;
 
-        size_t keyStart = varStart + 2;
-        size_t keyLen = varEnd - keyStart;
-        std::string_view keyView = text;
-        keyView = keyView.substr(keyStart, keyLen);
-        std::string key = trim(std::string(keyView));
+        std::string inner = trim(text.substr(varStart + 2, varEnd - varStart - 2));
 
+        std::string key;
+        std::string fallback;
+        std::string filter; // Moved here so it's visible later
 
-        auto it = context.find(key);
-        if (it != context.end()) {
-            result.append(it->second);
+        size_t pipePos = inner.find('|');
+        if (pipePos != std::string::npos) {
+            key = trim(inner.substr(0, pipePos));
+            filter = trim(inner.substr(pipePos + 1));
+
+            // Built-in `default("...")` filter
+            if (filter.starts_with("default(") && filter.back() == ')') {
+                fallback = filter.substr(8, filter.length() - 9);
+                if (!fallback.empty() && fallback.front() == '"' && fallback.back() == '"') {
+                    fallback = fallback.substr(1, fallback.size() - 2);
+                }
+                filter.clear(); // prevent calling a Lua filter for default
+            }
         } else {
-            result.append("");
+            key = inner;
         }
 
+        auto it = context.find(key);
+        std::string value = (it != context.end()) ? it->second : fallback;
 
+        // Lua-defined filters
+        if (!filter.empty()) {
+            auto fit = luaFilters_.find(filter);
+            if (fit != luaFilters_.end() && luaState_) {
+                lua_rawgeti(luaState_, LUA_REGISTRYINDEX, fit->second); // get filter function
+                lua_pushstring(luaState_, value.c_str()); // push value
+                if (lua_pcall(luaState_, 1, 1, 0) == LUA_OK) {
+                    if (lua_isstring(luaState_, -1)) {
+                        value = lua_tostring(luaState_, -1);
+                    }
+                    lua_pop(luaState_, 1); // remove result
+                } else {
+                    std::cerr << "[TemplateEngine] Lua filter error: " << lua_tostring(luaState_, -1) << std::endl;
+                    lua_pop(luaState_, 1); // remove error
+                }
+            }
+        }
+
+        result.append(value);
         pos = varEnd + 2;
     }
 

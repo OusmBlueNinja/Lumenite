@@ -162,6 +162,11 @@ void LumeniteApp::exposeBindings()
     lua_pushcfunction(L, lua_render_template_file);
     lua_setfield(L, -2, "render_template");
 
+
+    lua_pushcfunction(L, lua_register_template_filter);
+    lua_setfield(L, -2, "template_filter");
+
+
     lua_pushcfunction(L, lua_listen);
     lua_setfield(L, -2, "listen");
 
@@ -362,6 +367,16 @@ int LumeniteApp::lua_render_template_file(lua_State *L)
     return 1;
 }
 
+int LumeniteApp::lua_register_template_filter(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    if (!lua_isfunction(L, 2)) {
+        return luaL_error(L, "Second argument must be a function");
+    }
+
+    TemplateEngine::registerLuaFilter(name, L, 2);
+    return 0;
+}
 
 
 // — listen binding —

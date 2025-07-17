@@ -70,6 +70,9 @@ private:
 
     static int lua_render_template_file(lua_State *L);
 
+static int lua_register_template_filter(lua_State *L);
+
+
     static int lua_listen(lua_State* L);
 
 };
