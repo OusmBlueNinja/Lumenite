@@ -6,6 +6,10 @@
 #include <vector>
 #include <cstring>
 
+#include "SessionManager.h"
+
+
+
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -69,165 +73,184 @@ void Server::run()
             continue;
         }
 
-        std::string_view raw(buf.data(), n);
-        size_t headerEnd = raw.find("\r\n\r\n");
-        std::string_view header = (headerEnd == std::string_view::npos)
-                                      ? raw
-                                      : raw.substr(0, headerEnd);
-        std::string_view body = (headerEnd == std::string_view::npos)
-                                    ? std::string_view{}
-                                    : raw.substr(headerEnd + 4);
-
         HttpRequest req;
         HttpResponse res;
 
-        // Parse request line
-        size_t lineEnd = header.find("\r\n");
-        std::string_view reqLine = (lineEnd == std::string_view::npos) ? header : header.substr(0, lineEnd);
-        size_t sp1 = reqLine.find(' '), sp2 = reqLine.rfind(' ');
-        if (sp1 != std::string_view::npos && sp2 != sp1) {
-            req.method = std::string(reqLine.substr(0, sp1));
-            req.path = std::string(reqLine.substr(sp1 + 1, sp2 - sp1 - 1));
-        }
+        try {
+            std::string_view raw(buf.data(), n);
+            size_t headerEnd = raw.find("\r\n\r\n");
+            std::string_view header = (headerEnd == std::string_view::npos)
+                                          ? raw
+                                          : raw.substr(0, headerEnd);
+            std::string_view body = (headerEnd == std::string_view::npos)
+                                        ? std::string_view{}
+                                        : raw.substr(headerEnd + 4);
 
-        // Parse headers
-        size_t pos = lineEnd + 2;
-        while (pos < header.size()) {
-            size_t eol = header.find("\r\n", pos);
-            if (eol == std::string_view::npos) break;
-            auto line = header.substr(pos, eol - pos);
-            size_t colon = line.find(':');
-            if (colon != std::string_view::npos) {
-                auto key = std::string(line.substr(0, colon));
-                auto val = std::string(line.substr(colon + 1));
-                if (!val.empty() && val.front() == ' ') val = val.substr(1);
-                req.headers.emplace(std::move(key), std::move(val));
+            // Parse request line
+            size_t lineEnd = header.find("\r\n");
+            std::string_view reqLine = (lineEnd == std::string_view::npos) ? header : header.substr(0, lineEnd);
+            size_t sp1 = reqLine.find(' '), sp2 = reqLine.rfind(' ');
+            if (sp1 != std::string_view::npos && sp2 != sp1) {
+                req.method = std::string(reqLine.substr(0, sp1));
+                req.path = std::string(reqLine.substr(sp1 + 1, sp2 - sp1 - 1));
             }
-            pos = eol + 2;
-        }
 
-        // Body copy
-        if (!body.empty())
-            req.body.assign(body.begin(), body.end());
+            // Parse headers
+            size_t pos = lineEnd + 2;
+            while (pos < header.size()) {
+                size_t eol = header.find("\r\n", pos);
+                if (eol == std::string_view::npos) break;
+                auto line = header.substr(pos, eol - pos);
+                size_t colon = line.find(':');
+                if (colon != std::string_view::npos) {
+                    auto key = std::string(line.substr(0, colon));
+                    auto val = std::string(line.substr(colon + 1));
+                    if (!val.empty() && val.front() == ' ') val = val.substr(1);
+                    req.headers.emplace(std::move(key), std::move(val));
+                }
+                pos = eol + 2;
+            }
 
-        // Query parsing
-        if (auto qm = req.path.find('?'); qm != std::string::npos) {
-            std::string qs = req.path.substr(qm + 1);
-            req.path.resize(qm);
-            size_t p = 0;
-            while ((qm = qs.find('&', p)) != std::string::npos) {
-                auto kv = qs.substr(p, qm - p);
+            // Body copy
+            if (!body.empty()) req.body.assign(body.begin(), body.end());
+
+            // Query parsing
+            if (auto qm = req.path.find('?'); qm != std::string::npos) {
+                std::string qs = req.path.substr(qm + 1);
+                req.path.resize(qm);
+                size_t p = 0;
+                while ((qm = qs.find('&', p)) != std::string::npos) {
+                    auto kv = qs.substr(p, qm - p);
+                    if (auto eq = kv.find('='); eq != std::string::npos)
+                        req.query[kv.substr(0, eq)] = kv.substr(eq + 1);
+                    p = qm + 1;
+                }
+                auto kv = qs.substr(p);
                 if (auto eq = kv.find('='); eq != std::string::npos)
                     req.query[kv.substr(0, eq)] = kv.substr(eq + 1);
-                p = qm + 1;
             }
-            auto kv = qs.substr(p);
-            if (auto eq = kv.find('='); eq != std::string::npos)
-                req.query[kv.substr(0, eq)] = kv.substr(eq + 1);
-        }
 
-        SessionManager::start(req, res);
+            SessionManager::start(req, res);
 
-        std::vector<std::string> args;
-        int luaRef = 0;
+            std::vector<std::string> args;
+            int luaRef = 0;
 
-        // Shortcut for simple GET /
-        if (req.method == "GET" && req.path == "/") {
-            if (Router::match("GET", "/", luaRef, args)) {
-                // skip expensive matching step
-            }
-        } else {
-            Router::match(req.method, req.path, luaRef, args);
-        }
-
-        if (luaRef) {
-            lua_rawgeti(L, LUA_REGISTRYINDEX, luaRef);
-
-            // Build request table
-            lua_newtable(L);
-            auto pushKV = [&](const char *k, const std::string &v)
-            {
-                lua_pushstring(L, k);
-                lua_pushlstring(L, v.data(), v.size());
-                lua_settable(L, -3);
-            };
-            pushKV("method", req.method);
-            pushKV("path", req.path);
-            pushKV("body", req.body);
-
-            bool isJson = false;
-            if (auto it = req.headers.find("Content-Type"); it != req.headers.end())
-                isJson = (it->second == "application/json");
-            lua_pushstring(L, "json");
-            if (isJson) {
-                Json::Value root;
-                Json::CharReaderBuilder builder;
-                std::string errs;
-                std::string bodyStr(body);
-                std::istringstream bs(bodyStr);
-                if (Json::parseFromStream(builder, bs, &root, &errs)) {
-                    lua_newtable(L);
-                    for (auto &k: root.getMemberNames()) {
-                        const auto &v = root[k];
-                        lua_pushstring(L, k.c_str());
-                        if (v.isString()) lua_pushlstring(L, v.asCString(), v.asCString() ? strlen(v.asCString()) : 0);
-                        else if (v.isInt()) lua_pushinteger(L, v.asInt());
-                        else if (v.isDouble()) lua_pushnumber(L, v.asDouble());
-                        else if (v.isBool()) lua_pushboolean(L, v.asBool());
-                        else lua_pushnil(L);
-                        lua_settable(L, -3);
-                    }
-                } else lua_pushnil(L);
-            } else lua_pushnil(L);
-            lua_settable(L, -3);
-
-            lua_pushstring(L, "query");
-            lua_newtable(L);
-            for (auto &[k, v]: req.query) pushKV(k.c_str(), v);
-            lua_settable(L, -3);
-
-            for (auto &a: args)
-                lua_pushlstring(L, a.data(), a.size());
-
-            if (lua_pcall(L, 1 + (int)args.size(), 1, 0) != LUA_OK) {
-                std::cerr << RED "[Lua Error] " << lua_tostring(L, -1) << RESET "\n";
-                res.status = 500;
-                res.body = "<h1>500 Internal Server Error</h1>";
-                res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+            if (req.method == "GET" && req.path == "/") {
+                Router::match("GET", "/", luaRef, args);
             } else {
-                if (lua_istable(L, -1)) {
-                    lua_getfield(L, -1, "status");
-                    if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
-                    lua_pop(L, 1);
-
-                    lua_getfield(L, -1, "headers");
-                    if (lua_istable(L, -1)) {
-                        lua_pushnil(L);
-                        while (lua_next(L, -2)) {
-                            res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
-                            lua_pop(L, 1);
-                        }
-                    }
-                    lua_pop(L, 1);
-
-                    lua_getfield(L, -1, "body");
-                    if (lua_isstring(L, -1)) {
-                        size_t sz;
-                        const char *s = lua_tolstring(L, -1, &sz);
-                        res.body.assign(s, sz);
-                    }
-                    lua_pop(L, 1);
-                } else if (lua_isstring(L, -1) || lua_isnumber(L, -1)) {
-                    size_t sz;
-                    const char *s = lua_tolstring(L, -1, &sz);
-                    res.body.assign(s, sz);
-                }
-                if (res.headers.find("Content-Type") == res.headers.end())
-                    res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+                Router::match(req.method, req.path, luaRef, args);
             }
-        } else {
-            res.status = 404;
-            res.body = "<h1>404 Not Found</h1>";
+
+            if (luaRef) {
+                lua_rawgeti(L, LUA_REGISTRYINDEX, luaRef);
+
+                // Request table
+                lua_newtable(L);
+                auto pushKV = [&](const char *k, const std::string &v)
+                {
+                    lua_pushstring(L, k);
+                    lua_pushlstring(L, v.data(), v.size());
+                    lua_settable(L, -3);
+                };
+                pushKV("method", req.method);
+                pushKV("path", req.path);
+                pushKV("body", req.body);
+
+                bool isJson = false;
+                if (auto it = req.headers.find("Content-Type"); it != req.headers.end())
+                    isJson = (it->second == "application/json");
+                lua_pushstring(L, "json");
+                if (isJson) {
+                    Json::Value root;
+                    Json::CharReaderBuilder builder;
+                    std::string errs;
+                    std::istringstream bs(req.body);
+                    if (Json::parseFromStream(builder, bs, &root, &errs)) {
+                        lua_newtable(L);
+                        for (auto &k: root.getMemberNames()) {
+                            const auto &v = root[k];
+                            lua_pushstring(L, k.c_str());
+                            if (v.isString()) lua_pushstring(L, v.asCString());
+                            else if (v.isInt()) lua_pushinteger(L, v.asInt());
+                            else if (v.isDouble()) lua_pushnumber(L, v.asDouble());
+                            else if (v.isBool()) lua_pushboolean(L, v.asBool());
+                            else lua_pushnil(L);
+                            lua_settable(L, -3);
+                        }
+                    } else lua_pushnil(L);
+                } else lua_pushnil(L);
+                lua_settable(L, -3);
+
+                lua_pushstring(L, "query");
+                lua_newtable(L);
+                for (auto &[k, v]: req.query) pushKV(k.c_str(), v);
+                lua_settable(L, -3);
+
+                for (auto &a: args)
+                    lua_pushlstring(L, a.data(), a.size());
+
+                if (lua_pcall(L, 1 + (int)args.size(), 1, 0) != LUA_OK) {
+                    std::cerr << RED "[Lua Error] " << lua_tostring(L, -1) << RESET "\n";
+                    res.status = 500;
+                    res.body = "<h1>500 Internal Server Error</h1>";
+                } else {
+                    try {
+                        if (lua_istable(L, -1)) {
+                            lua_getfield(L, -1, "status");
+                            if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
+                            lua_pop(L, 1);
+
+                            lua_getfield(L, -1, "headers");
+                            if (lua_istable(L, -1)) {
+                                lua_pushnil(L);
+                                while (lua_next(L, -2)) {
+                                    res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                                    lua_pop(L, 1);
+                                }
+                            }
+                            lua_pop(L, 1);
+
+                            lua_getfield(L, -1, "body");
+                            if (lua_isstring(L, -1)) {
+                                size_t sz;
+                                const char *s = lua_tolstring(L, -1, &sz);
+                                res.body.assign(s, sz);
+                            }
+                            lua_pop(L, 1);
+                        } else if (lua_isstring(L, -1) || lua_isnumber(L, -1)) {
+                            size_t sz;
+                            const char *s = lua_tolstring(L, -1, &sz);
+                            res.body.assign(s, sz);
+                        }
+
+                        if (res.headers.find("Content-Type") == res.headers.end())
+                            res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+                    } catch (const std::exception &e) {
+                        std::cerr << RED "[Template Error] " << e.what() << RESET "\n";
+                        res.status = 500;
+                        res.body = "<h1>500 Internal Server Error</h1>";
+                        res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+                    } catch (...) {
+                        std::cerr << RED "[Unknown Error] Rendering failed." RESET "\n";
+                        res.status = 500;
+                        res.body = "<h1>500 Internal Server Error</h1>";
+                        res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+                    }
+                }
+            } else {
+                res.status = 404;
+                res.body = "<h1>404 Not Found</h1>";
+                res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+            }
+        } catch (const std::exception &e) {
+            std::cerr << RED "[Fatal Error] " << e.what() << RESET "\n";
+            res.status = 500;
+            res.body = "<h1>500 Internal Server Error</h1>";
+            res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+        } catch (...) {
+            std::cerr << RED "[Fatal Error] Unknown exception" RESET "\n";
+            res.status = 500;
+            res.body = "<h1>500 Internal Server Error</h1>";
             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
         }
 
@@ -251,6 +274,7 @@ void Server::run()
     close(sock);
 #endif
 }
+
 
 std::string Server::receiveRequest(int clientSocket) { return ""; } // now unused
 void Server::sendResponse(int clientSocket, const std::string &out)

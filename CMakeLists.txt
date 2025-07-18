@@ -30,6 +30,8 @@ add_executable(lumenite
         src/Server.h
         src/TemplateEngine.cpp
         src/TemplateEngine.h
+        src/SessionManager.cpp
+        src/SessionManager.h
 )
 
 target_include_directories(lumenite PRIVATE vendor/lua)

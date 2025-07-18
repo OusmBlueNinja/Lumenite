@@ -57,86 +57,75 @@ void TemplateEngine::registerLuaFilter(const std::string &name, lua_State *L, in
 
 std::string TemplateEngine::render(const std::string &templateName,
                                    const std::unordered_map<std::string, std::string> &context)
-{
-    try {
-        {
-            std::lock_guard<std::mutex> lock(cacheMutex_);
-            auto it = compiledCache_.find(templateName);
-            if (it != compiledCache_.end() && it->second.isValid) {
-                if (!config_.enableFileWatching || !isFileNewer(templateName, it->second.lastModified)) {
-                    return substitute(it->second.content, context);
-                }
+{ {
+        std::lock_guard<std::mutex> lock(cacheMutex_);
+        auto it = compiledCache_.find(templateName);
+        if (it != compiledCache_.end() && it->second.isValid) {
+            if (!config_.enableFileWatching || !isFileNewer(templateName, it->second.lastModified)) {
+                return substitute(it->second.content, context);
             }
         }
-
-        std::string templateContent = loadTemplate(templateName);
-        return renderFromString(templateContent, context);
-    } catch (const std::exception &e) {
-        std::cerr << "Template rendering error: " << e.what() << std::endl;
-        return "";
     }
+
+    std::string templateContent = loadTemplate(templateName);
+    return renderFromString(templateContent, context);
 }
 
 
 std::string TemplateEngine::renderFromString(const std::string &templateText,
                                              const std::unordered_map<std::string, std::string> &context)
 {
-    try {
-        std::vector<std::string> includeStack;
-        std::string processedContent = processIncludes(templateText, includeStack);
+    std::vector<std::string> includeStack;
+    std::string processedContent = processIncludes(templateText, includeStack);
 
-        std::string parentFile;
-        std::string workingContent = processedContent;
+    std::string parentFile;
+    std::string workingContent = processedContent;
 
-        // Look for a proper {% extends "..." %} directive
-        size_t extendsPos = workingContent.find("{% extends");
-        if (extendsPos != std::string::npos) {
-            size_t quoteStart = workingContent.find('"', extendsPos);
-            size_t quoteEnd = (quoteStart != std::string::npos)
-                                  ? workingContent.find('"', quoteStart + 1)
-                                  : std::string::npos;
-            size_t endTag = (quoteEnd != std::string::npos) ? workingContent.find("%}", quoteEnd) : std::string::npos;
+    // Look for a proper {% extends "..." %} directive
+    size_t extendsPos = workingContent.find("{% extends");
+    if (extendsPos != std::string::npos) {
+        size_t quoteStart = workingContent.find('"', extendsPos);
+        size_t quoteEnd = (quoteStart != std::string::npos)
+                              ? workingContent.find('"', quoteStart + 1)
+                              : std::string::npos;
+        size_t endTag = (quoteEnd != std::string::npos) ? workingContent.find("%}", quoteEnd) : std::string::npos;
 
-            // Validate structure
-            if (quoteStart != std::string::npos &&
-                quoteEnd != std::string::npos &&
-                endTag != std::string::npos &&
-                quoteStart < quoteEnd && quoteEnd < endTag) {
-                parentFile = workingContent.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
-                workingContent.erase(extendsPos, endTag + 2 - extendsPos);
+        // Validate structure
+        if (quoteStart != std::string::npos &&
+            quoteEnd != std::string::npos &&
+            endTag != std::string::npos &&
+            quoteStart < quoteEnd && quoteEnd < endTag) {
+            parentFile = workingContent.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+            workingContent.erase(extendsPos, endTag + 2 - extendsPos);
 
-                // sanity check: must look like a filename, not HTML
-                if (parentFile.find('<') != std::string::npos || parentFile.find('>') != std::string::npos) {
-                    throw std::runtime_error("Invalid parent template name: " + parentFile);
-                }
-            } else {
-                std::cerr << "Warning: Malformed {% extends %} directive ignored.\n";
+            // sanity check: must look like a filename, not HTML
+            if (parentFile.find('<') != std::string::npos || parentFile.find('>') != std::string::npos) {
+                throw std::runtime_error("Invalid parent template name: " + parentFile);
             }
-        }
-
-        std::unordered_map<std::string, std::string> childBlocks;
-        std::string childBody = extractAndProcessBlocks(workingContent, childBlocks);
-
-        std::string result;
-
-        if (!parentFile.empty()) {
-            std::string parentContent = loadTemplate(parentFile);
-            std::vector<std::string> parentIncludeStack;
-            std::string processedParent = processIncludes(parentContent, parentIncludeStack);
-            injectBlocks(processedParent, childBlocks);
-            result = processedParent;
-        } else if (!childBlocks.empty()) {
-            result = childBody;
         } else {
-            result = workingContent;
+            std::cerr << "Warning: Malformed {% extends %} directive ignored.\n";
         }
-
-        result = processConditionals(result, context);
-        return substitute(result, context);
-    } catch (const std::exception &e) {
-        std::cerr << "Template rendering error: " << e.what() << std::endl;
-        return "<h1>500 Server Error</h1>";
     }
+
+    std::unordered_map<std::string, std::string> childBlocks;
+    std::string childBody = extractAndProcessBlocks(workingContent, childBlocks);
+
+    std::string result;
+
+    if (!parentFile.empty()) {
+        std::string parentContent = loadTemplate(parentFile);
+        std::vector<std::string> parentIncludeStack;
+        std::string processedParent = processIncludes(parentContent, parentIncludeStack);
+        injectBlocks(processedParent, childBlocks);
+        result = processedParent;
+    } else if (!childBlocks.empty()) {
+        result = childBody;
+    } else {
+        result = workingContent;
+    }
+
+    result = processConditionals(result, context);
+    return substitute(result, context);
 }
 
 
@@ -336,51 +325,68 @@ std::string TemplateEngine::substitute(const std::string &text,
 
         result.append(text, pos, varStart - pos);
         size_t varEnd = text.find("}}", varStart);
-        if (varEnd == std::string::npos) break;
+        if (varEnd == std::string::npos)
+            throw std::runtime_error("Unclosed {{ ... }} in template");
 
         std::string inner = trim(text.substr(varStart + 2, varEnd - varStart - 2));
 
-        std::string key;
+        // Split by '|'
+        std::istringstream ss(inner);
+        std::string segment;
+        std::vector<std::string> parts;
+
+        while (std::getline(ss, segment, '|'))
+            parts.push_back(trim(segment));
+
+        if (parts.empty())
+            throw std::runtime_error("Empty expression inside {{ }}");
+
+        std::string key = parts[0];
+        std::string value;
         std::string fallback;
-        std::string filter; // Moved here so it's visible later
 
-        size_t pipePos = inner.find('|');
-        if (pipePos != std::string::npos) {
-            key = trim(inner.substr(0, pipePos));
-            filter = trim(inner.substr(pipePos + 1));
+        // Lookup value
+        auto it = context.find(key);
+        if (it != context.end()) {
+            value = it->second;
+        }
 
-            // Built-in `default("...")` filter
+        for (size_t i = 1; i < parts.size(); ++i) {
+            std::string &filter = parts[i];
+
+            // Built-in default("fallback")
             if (filter.starts_with("default(") && filter.back() == ')') {
                 fallback = filter.substr(8, filter.length() - 9);
                 if (!fallback.empty() && fallback.front() == '"' && fallback.back() == '"') {
                     fallback = fallback.substr(1, fallback.size() - 2);
                 }
-                filter.clear(); // prevent calling a Lua filter for default
-            }
-        } else {
-            key = inner;
-        }
 
-        auto it = context.find(key);
-        std::string value = (it != context.end()) ? it->second : fallback;
-
-        // Lua-defined filters
-        if (!filter.empty()) {
-            auto fit = luaFilters_.find(filter);
-            if (fit != luaFilters_.end() && luaState_) {
-                lua_rawgeti(luaState_, LUA_REGISTRYINDEX, fit->second); // get filter function
-                lua_pushstring(luaState_, value.c_str()); // push value
-                if (lua_pcall(luaState_, 1, 1, 0) == LUA_OK) {
-                    if (lua_isstring(luaState_, -1)) {
-                        value = lua_tostring(luaState_, -1);
+                if (value.empty())
+                    value = fallback;
+            } else {
+                // Lua-defined filter
+                auto fit = luaFilters_.find(filter);
+                if (fit != luaFilters_.end() && luaState_) {
+                    lua_rawgeti(luaState_, LUA_REGISTRYINDEX, fit->second); // push function
+                    lua_pushstring(luaState_, value.c_str());
+                    if (lua_pcall(luaState_, 1, 1, 0) == LUA_OK) {
+                        if (lua_isstring(luaState_, -1)) {
+                            value = lua_tostring(luaState_, -1);
+                        }
+                        lua_pop(luaState_, 1); // pop result
+                    } else {
+                        std::string err = lua_tostring(luaState_, -1);
+                        lua_pop(luaState_, 1);
+                        throw std::runtime_error("Lua filter error: " + err);
                     }
-                    lua_pop(luaState_, 1); // remove result
                 } else {
-                    std::cerr << "[TemplateEngine] Lua filter error: " << lua_tostring(luaState_, -1) << std::endl;
-                    lua_pop(luaState_, 1); // remove error
+                    throw std::runtime_error("Unknown filter: " + filter);
                 }
             }
         }
+
+        if (value.empty())
+            throw std::runtime_error("Missing template variable: " + key);
 
         result.append(value);
         pos = varEnd + 2;

@@ -1,5 +1,78 @@
-<h1>Welcome {{ name | default("guest") | upper}}</h1>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>User Registry</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 2rem;
+        }
 
-{% if admin %}
-<p>You have admin access.</p>
-{% endif %}
+        form {
+            margin-bottom: 1rem;
+        }
+
+        table, th, td {
+            border: 1px solid #ccc;
+            border-collapse: collapse;
+            padding: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+<h1>User Registry</h1>
+
+<form id="userForm">
+    <input type="text" id="name" placeholder="Name" required>
+    <input type="number" id="age" placeholder="Age" required>
+    <button type="submit">Add User</button>
+</form>
+
+<h2>All Users</h2>
+<table id="usersTable">
+    <thead>
+    <tr>
+        <th>Name</th>
+        <th>Age</th>
+    </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+
+<script>
+    const form = document.getElementById("userForm");
+    const tableBody = document.querySelector("#usersTable tbody");
+
+    async function loadUsers() {
+        const res = await fetch("/api/users");
+        const users = await res.json();
+
+        tableBody.innerHTML = "";
+        for (const user of users) {
+            const row = document.createElement("tr");
+            row.innerHTML = `<td>${user.name}</td><td>${user.age}</td>`;
+            tableBody.appendChild(row);
+        }
+    }
+
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const name = document.getElementById("name").value;
+        const age = parseInt(document.getElementById("age").value, 10);
+
+        await fetch("/api/users", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({name, age})
+        });
+
+        form.reset();
+        loadUsers();
+    });
+
+    loadUsers();
+</script>
+</body>
+</html>
