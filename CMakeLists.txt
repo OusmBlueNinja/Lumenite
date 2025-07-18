@@ -10,7 +10,7 @@ include(FetchContent)
 FetchContent_Declare(
         jsoncpp
         GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
-        GIT_TAG        1.9.5
+        GIT_TAG 1.9.5
 )
 FetchContent_MakeAvailable(jsoncpp)
 
@@ -36,3 +36,6 @@ add_executable(lumenite
 
 target_include_directories(lumenite PRIVATE vendor/lua)
 target_link_libraries(lumenite PRIVATE lua_static jsoncpp_lib ws2_32)
+if (WIN32)
+    target_link_libraries(lumenite PRIVATE iphlpapi)
+endif ()

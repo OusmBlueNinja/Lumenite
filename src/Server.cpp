@@ -5,9 +5,9 @@
 #include <iostream>
 #include <vector>
 #include <cstring>
+#include <iomanip>
 
 #include "SessionManager.h"
-
 
 
 #ifdef _WIN32
@@ -31,10 +31,85 @@
 
 static constexpr const char *DEFAULT_CONTENT_TYPE = "text/html";
 
+
 Server::Server(int port, lua_State *L)
     : port(port), L(L)
 {
 }
+
+
+#include <iostream>
+#include <string>
+#include <vector>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <iphlpapi.h>
+#pragma comment(lib, "iphlpapi.lib")
+
+#else
+#include <ifaddrs.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
+void printLocalIPs(int port)
+{
+    std::vector<std::string> addresses;
+
+#ifdef _WIN32
+    ULONG bufferSize = 15000;
+    PIP_ADAPTER_ADDRESSES adapterAddrs = (IP_ADAPTER_ADDRESSES *) malloc(bufferSize);
+    if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST, nullptr, adapterAddrs, &bufferSize) == ERROR_SUCCESS) {
+        for (PIP_ADAPTER_ADDRESSES adapter = adapterAddrs; adapter != nullptr; adapter = adapter->Next) {
+            for (PIP_ADAPTER_UNICAST_ADDRESS addr = adapter->FirstUnicastAddress; addr != nullptr; addr = addr->Next) {
+                SOCKADDR *sa = addr->Address.lpSockaddr;
+                char ip[INET6_ADDRSTRLEN];
+                if (sa->sa_family == AF_INET) {
+                    getnameinfo(sa, sizeof(sockaddr_in), ip, sizeof(ip), nullptr, 0, NI_NUMERICHOST);
+                    std::string ipStr = ip;
+
+                    if (
+                        ipStr.rfind("169.254.", 0) != 0 && // Ignore link-local
+                        ipStr != "0.0.0.0"
+                    ) {
+                        addresses.emplace_back(ipStr);
+                    }
+                }
+            }
+        }
+    }
+    free(adapterAddrs);
+#else
+    struct ifaddrs *ifaddr;
+    getifaddrs(&ifaddr);
+    for (struct ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
+            char ip[INET_ADDRSTRLEN];
+            void *addr_ptr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+            inet_ntop(AF_INET, addr_ptr, ip, sizeof(ip));
+            std::string ipStr = ip;
+
+            if (
+                ipStr.rfind("169.254.", 0) != 0 &&  // Ignore link-local
+                ipStr != "0.0.0.0"
+            ) {
+                addresses.emplace_back(ipStr);
+            }
+        }
+    }
+    freeifaddrs(ifaddr);
+#endif
+
+    std::cout << "\033[1;36m *\033[0m Lumenite Server \033[1mrunning at:\033[0m\n";
+
+    for (const auto &ip: addresses) {
+        std::cout << "   -> \033[1;33mhttp://" << ip << ":" << port << "\033[0m\n";
+    }
+
+    std::cout << "\033[1;36m *\033[0m Press \033[1mCTRL+C\033[0m to quit\n";
+}
+
 
 void Server::run()
 {
@@ -51,10 +126,8 @@ void Server::run()
     bind(sock, (sockaddr *) &addr, sizeof(addr));
     listen(sock, 10);
 
-    std::cout << BOLD CYAN
-            << "|     " BLUE "Lumenite Server" CYAN
-            << " - Listening on port " YELLOW << port << CYAN
-            << "     |" RESET "\n";
+    printLocalIPs(port);
+
 
     while (true) {
         sockaddr_in clientAddr{};
