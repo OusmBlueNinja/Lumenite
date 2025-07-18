@@ -349,7 +349,7 @@ void Server::run()
 }
 
 
-std::string Server::receiveRequest(int clientSocket) { return ""; } // now unused
+std::string Server::receiveRequest(int clientSocket) { return ""; }
 void Server::sendResponse(int clientSocket, const std::string &out)
 {
     send(clientSocket, out.c_str(), (int) out.size(), 0);
