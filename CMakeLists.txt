@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
-# --- Fetch JsonCpp ---
 FetchContent_Declare(
         jsoncpp
         GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
@@ -14,12 +13,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(jsoncpp)
 
-# --- Lua ---
+FetchContent_Declare(
+        curl
+        GIT_REPOSITORY https://github.com/curl/curl.git
+        GIT_TAG curl-8_7_1 # latest stable tag as of mid-2025
+)
+FetchContent_MakeAvailable(curl)
+
+set(BUILD_CURL_EXE OFF CACHE INTERNAL "")
+set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")
+set(HTTP_ONLY ON CACHE INTERNAL "")
+
 file(GLOB LUA_SRC CONFIGURE_DEPENDS vendor/lua/*.c)
 add_library(lua_static STATIC ${LUA_SRC})
 target_include_directories(lua_static PUBLIC vendor/lua)
 
-# --- Lumenite App ---
 add_executable(lumenite
         src/LumeniteApp.cpp
         src/LumeniteApp.h
@@ -35,7 +43,14 @@ add_executable(lumenite
 )
 
 target_include_directories(lumenite PRIVATE vendor/lua)
-target_link_libraries(lumenite PRIVATE lua_static jsoncpp_lib ws2_32)
+
+target_link_libraries(lumenite PRIVATE
+        lua_static
+        jsoncpp_lib
+        CURL::libcurl
+        ws2_32
+)
+
 if (WIN32)
     target_link_libraries(lumenite PRIVATE iphlpapi)
-endif ()
+endif()

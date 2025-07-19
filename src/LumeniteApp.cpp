@@ -6,6 +6,16 @@
 #include <random>
 #include <chrono>
 #include <sstream>
+#include <curl/curl.h>
+
+
+static size_t WriteCallback(void *contents, const size_t size, size_t nmemb, std::string *output)
+{
+    const size_t totalSize = size * nmemb;
+    output->append(static_cast<char *>(contents), totalSize);
+    return totalSize;
+}
+
 
 // ————— Recursive Lua→JSON converter —————
 static Json::Value lua_to_json(lua_State *L, int idx)
@@ -128,6 +138,77 @@ void LumeniteApp::loadScript(const std::string &path)
     }
 }
 
+static int lua_http_get(lua_State *L)
+{
+    const char *url = luaL_checkstring(L, 1);
+
+    CURL *curl = curl_easy_init();
+    std::string response;
+    long http_status = 0;
+    CURLcode res;
+
+    lua_newtable(L); // prepare return table
+
+    if (!curl)
+    {
+        lua_pushstring(L, "status");
+        lua_pushinteger(L, 0);
+        lua_settable(L, -3);
+
+        lua_pushstring(L, "body");
+        lua_pushstring(L, "");
+        lua_settable(L, -3);
+
+        lua_pushstring(L, "error");
+        lua_pushstring(L, "CURL initialization failed");
+        lua_settable(L, -3);
+
+        return 1;
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+    res = curl_easy_perform(curl);
+
+    if (res != CURLE_OK)
+    {
+        curl_easy_cleanup(curl);
+
+        lua_pushstring(L, "status");
+        lua_pushinteger(L, 0);
+        lua_settable(L, -3);
+
+        lua_pushstring(L, "body");
+        lua_pushstring(L, "");
+        lua_settable(L, -3);
+
+        lua_pushstring(L, "error");
+        lua_pushstring(L, curl_easy_strerror(res));
+        lua_settable(L, -3);
+
+        return 1;
+    }
+
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status);
+    curl_easy_cleanup(curl);
+
+    lua_pushstring(L, "status");
+    lua_pushinteger(L, http_status);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "body");
+    lua_pushlstring(L, response.data(), response.size());
+    lua_settable(L, -3);
+
+    return 1;
+}
+
+
+
 // ————— Lua API Binding Exposure —————
 void LumeniteApp::exposeBindings()
 {
@@ -146,6 +227,10 @@ void LumeniteApp::exposeBindings()
     lua_setfield(L, -2, "session_get");
     lua_pushcfunction(L, lua_session_set);
     lua_setfield(L, -2, "session_set");
+
+    lua_pushcfunction(L, lua_http_get);
+    lua_setfield(L, -2, "http_get");
+
 
     lua_pushcfunction(L, lua_json);
     lua_setfield(L, -2, "json");

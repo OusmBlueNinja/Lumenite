@@ -29,7 +29,11 @@
 #define RED    "\033[31m"
 #define RESET  "\033[0m"
 
-static constexpr const char *DEFAULT_CONTENT_TYPE = "text/html";
+static constexpr auto DEFAULT_CONTENT_TYPE = "text/html";
+
+
+static auto ERROR_MSG_500 = "<h1>500 Internal Server Error</h1>";
+static auto ERROR_MSG_400 = "<h1>404 Not Found</h1>";
 
 
 Server::Server(int port, lua_State *L)
@@ -59,7 +63,7 @@ void printLocalIPs(int port)
 
 #ifdef _WIN32
     ULONG bufferSize = 15000;
-    PIP_ADAPTER_ADDRESSES adapterAddrs = (IP_ADAPTER_ADDRESSES *) malloc(bufferSize);
+    const auto adapterAddrs = static_cast<IP_ADAPTER_ADDRESSES *>(malloc(bufferSize));
     if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST, nullptr, adapterAddrs, &bufferSize) == ERROR_SUCCESS) {
         for (PIP_ADAPTER_ADDRESSES adapter = adapterAddrs; adapter != nullptr; adapter = adapter->Next) {
             for (PIP_ADAPTER_UNICAST_ADDRESS addr = adapter->FirstUnicastAddress; addr != nullptr; addr = addr->Next) {
@@ -67,9 +71,8 @@ void printLocalIPs(int port)
                 char ip[INET6_ADDRSTRLEN];
                 if (sa->sa_family == AF_INET) {
                     getnameinfo(sa, sizeof(sockaddr_in), ip, sizeof(ip), nullptr, 0, NI_NUMERICHOST);
-                    std::string ipStr = ip;
 
-                    if (
+                    if (std::string ipStr = ip;
                         ipStr.rfind("169.254.", 0) != 0 && // Ignore link-local
                         ipStr != "0.0.0.0"
                     ) {
@@ -104,7 +107,7 @@ void printLocalIPs(int port)
     std::cout << "\033[1;36m *\033[0m Lumenite Server \033[1mrunning at:\033[0m\n";
 
     for (const auto &ip: addresses) {
-        std::cout << "   -> \033[1;33mhttp://" << ip << ":" << port << "\033[0m\n";
+        std::cout << "   ->\033[1;33m http://" << ip << ":" << port << "\033[0m\n";
     }
 
     std::cout << "\033[1;36m *\033[0m Press \033[1mCTRL+C\033[0m to quit\n";
@@ -118,12 +121,12 @@ void Server::run()
     WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
 
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
-    bind(sock, (sockaddr *) &addr, sizeof(addr));
+    bind(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
     listen(sock, 10);
 
     printLocalIPs(port);
@@ -132,7 +135,7 @@ void Server::run()
     while (true) {
         sockaddr_in clientAddr{};
         socklen_t len = sizeof(clientAddr);
-        int clientSock = accept(sock, (sockaddr *) &clientAddr, &len);
+        int clientSock = accept(sock, reinterpret_cast<sockaddr *>(&clientAddr), &len);
         if (clientSock < 0) continue;
 
         std::vector<char> buf(8192);
@@ -174,8 +177,7 @@ void Server::run()
                 size_t eol = header.find("\r\n", pos);
                 if (eol == std::string_view::npos) break;
                 auto line = header.substr(pos, eol - pos);
-                size_t colon = line.find(':');
-                if (colon != std::string_view::npos) {
+                if (size_t colon = line.find(':'); colon != std::string_view::npos) {
                     auto key = std::string(line.substr(0, colon));
                     auto val = std::string(line.substr(colon + 1));
                     if (!val.empty() && val.front() == ' ') val = val.substr(1);
@@ -231,14 +233,13 @@ void Server::run()
 
                 bool isJson = false;
                 if (auto it = req.headers.find("Content-Type"); it != req.headers.end())
-                    isJson = (it->second == "application/json");
+                    isJson = it->second == "application/json";
                 lua_pushstring(L, "json");
                 if (isJson) {
                     Json::Value root;
-                    Json::CharReaderBuilder builder;
                     std::string errs;
                     std::istringstream bs(req.body);
-                    if (Json::parseFromStream(builder, bs, &root, &errs)) {
+                    if (Json::CharReaderBuilder builder; Json::parseFromStream(builder, bs, &root, &errs)) {
                         lua_newtable(L);
                         for (auto &k: root.getMemberNames()) {
                             const auto &v = root[k];
@@ -262,10 +263,10 @@ void Server::run()
                 for (auto &a: args)
                     lua_pushlstring(L, a.data(), a.size());
 
-                if (lua_pcall(L, 1 + (int)args.size(), 1, 0) != LUA_OK) {
+                if (lua_pcall(L, 1 + static_cast<int>(args.size()), 1, 0) != LUA_OK) {
                     std::cerr << RED "[Lua Error] " << lua_tostring(L, -1) << RESET "\n";
                     res.status = 500;
-                    res.body = "<h1>500 Internal Server Error</h1>";
+                    res.body = ERROR_MSG_500;
                 } else {
                     try {
                         if (lua_istable(L, -1)) {
@@ -296,34 +297,34 @@ void Server::run()
                             res.body.assign(s, sz);
                         }
 
-                        if (res.headers.find("Content-Type") == res.headers.end())
+                        if (!res.headers.contains("Content-Type"))
                             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
                     } catch (const std::exception &e) {
                         std::cerr << RED "[Template Error] " << e.what() << RESET "\n";
                         res.status = 500;
-                        res.body = "<h1>500 Internal Server Error</h1>";
+                        res.body = ERROR_MSG_500;
                         res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
                     } catch (...) {
                         std::cerr << RED "[Unknown Error] Rendering failed." RESET "\n";
                         res.status = 500;
-                        res.body = "<h1>500 Internal Server Error</h1>";
+                        res.body = ERROR_MSG_500;
                         res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
                     }
                 }
             } else {
                 res.status = 404;
-                res.body = "<h1>404 Not Found</h1>";
+                res.body = ERROR_MSG_400;
                 res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
             }
         } catch (const std::exception &e) {
             std::cerr << RED "[Fatal Error] " << e.what() << RESET "\n";
             res.status = 500;
-            res.body = "<h1>500 Internal Server Error</h1>";
+            res.body = ERROR_MSG_500;
             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
         } catch (...) {
             std::cerr << RED "[Fatal Error] Unknown exception" RESET "\n";
             res.status = 500;
-            res.body = "<h1>500 Internal Server Error</h1>";
+            res.body = ERROR_MSG_500;
             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
         }
 
@@ -350,9 +351,10 @@ void Server::run()
 
 
 std::string Server::receiveRequest(int clientSocket) { return ""; }
+
 void Server::sendResponse(int clientSocket, const std::string &out)
 {
-    send(clientSocket, out.c_str(), (int) out.size(), 0);
+    send(clientSocket, out.c_str(), static_cast<int>(out.size()), 0);
 #ifdef _WIN32
     closesocket(clientSocket);
 #else
