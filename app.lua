@@ -280,6 +280,17 @@ app:get("/", function()
     }
 end)
 
+app.before_request(function(req)
+    print(req.headers["User-Agent"])
+end)
+
+app.after_request(function(req, res)
+    res.headers["X-Powered-By"] = "Lumenite"
+    return res
+end)
+
+
+
 
 -- Start the server
 app:listen(8080)
