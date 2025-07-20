@@ -6,7 +6,7 @@
 #include <vector>
 #include <cstring>
 #include <iomanip>
-
+#include "LumeniteApp.h"
 #include "SessionManager.h"
 
 
@@ -114,6 +114,63 @@ void printLocalIPs(int port)
 }
 
 
+// Push full request table to Lua
+static void push_lua_request(lua_State *L, const HttpRequest &req)
+{
+    lua_newtable(L);
+
+    lua_pushstring(L, "method");
+    lua_pushstring(L, req.method.c_str());
+    lua_settable(L, -3);
+    lua_pushstring(L, "path");
+    lua_pushstring(L, req.path.c_str());
+    lua_settable(L, -3);
+    lua_pushstring(L, "body");
+    lua_pushstring(L, req.body.c_str());
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "headers");
+    lua_newtable(L);
+    for (const auto &[k, v]: req.headers) {
+        lua_pushstring(L, k.c_str());
+        lua_pushstring(L, v.c_str());
+        lua_settable(L, -3);
+    }
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "query");
+    lua_newtable(L);
+    for (const auto &[k, v]: req.query) {
+        lua_pushstring(L, k.c_str());
+        lua_pushstring(L, v.c_str());
+        lua_settable(L, -3);
+    }
+    lua_settable(L, -3);
+}
+
+// Push full response table to Lua
+static void push_lua_response(lua_State *L, const HttpResponse &res)
+{
+    lua_newtable(L);
+
+    lua_pushstring(L, "status");
+    lua_pushinteger(L, res.status);
+    lua_settable(L, -3);
+    lua_pushstring(L, "body");
+    lua_pushstring(L, res.body.c_str());
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "headers");
+    lua_newtable(L);
+    for (const auto &[k, v]: res.headers) {
+        lua_pushstring(L, k.c_str());
+        lua_pushstring(L, v.c_str());
+        lua_settable(L, -3);
+    }
+    lua_settable(L, -3);
+}
+
+
 void Server::run()
 {
 #ifdef _WIN32
@@ -130,7 +187,6 @@ void Server::run()
     listen(sock, 10);
 
     printLocalIPs(port);
-
 
     while (true) {
         sockaddr_in clientAddr{};
@@ -207,122 +263,136 @@ void Server::run()
 
             SessionManager::start(req, res);
 
+            bool earlyExit = false;
+
+            // ——— BEFORE REQUEST HOOK ———
+            if (LumeniteApp::before_request_ref != LUA_NOREF) {
+                lua_rawgeti(L, LUA_REGISTRYINDEX, LumeniteApp::before_request_ref);
+                push_lua_request(L, req);
+                if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
+                    std::cerr << RED "[before_request error] " << lua_tostring(L, -1) << RESET "\n";
+                    lua_pop(L, 1);
+                } else if (lua_istable(L, -1)) {
+                    lua_getfield(L, -1, "status");
+                    if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
+                    lua_pop(L, 1);
+
+                    lua_getfield(L, -1, "body");
+                    if (lua_isstring(L, -1)) res.body = lua_tostring(L, -1);
+                    lua_pop(L, 1);
+
+                    lua_getfield(L, -1, "headers");
+                    if (lua_istable(L, -1)) {
+                        lua_pushnil(L);
+                        while (lua_next(L, -2)) {
+                            res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                            lua_pop(L, 1);
+                        }
+                    }
+                    lua_pop(L, 1);
+
+                    earlyExit = true;
+                }
+                lua_pop(L, 1);
+            }
+
             std::vector<std::string> args;
             int luaRef = 0;
 
-            if (req.method == "GET" && req.path == "/") {
-                Router::match("GET", "/", luaRef, args);
-            } else {
-                Router::match(req.method, req.path, luaRef, args);
-            }
-
-            if (luaRef) {
-                lua_rawgeti(L, LUA_REGISTRYINDEX, luaRef);
-
-                // Request table
-                lua_newtable(L);
-                auto pushKV = [&](const char *k, const std::string &v)
-                {
-                    lua_pushstring(L, k);
-                    lua_pushlstring(L, v.data(), v.size());
-                    lua_settable(L, -3);
-                };
-                pushKV("method", req.method);
-                pushKV("path", req.path);
-                pushKV("body", req.body);
-
-                bool isJson = false;
-                if (auto it = req.headers.find("Content-Type"); it != req.headers.end())
-                    isJson = it->second == "application/json";
-                lua_pushstring(L, "json");
-                if (isJson) {
-                    Json::Value root;
-                    std::string errs;
-                    std::istringstream bs(req.body);
-                    if (Json::CharReaderBuilder builder; Json::parseFromStream(builder, bs, &root, &errs)) {
-                        lua_newtable(L);
-                        for (auto &k: root.getMemberNames()) {
-                            const auto &v = root[k];
-                            lua_pushstring(L, k.c_str());
-                            if (v.isString()) lua_pushstring(L, v.asCString());
-                            else if (v.isInt()) lua_pushinteger(L, v.asInt());
-                            else if (v.isDouble()) lua_pushnumber(L, v.asDouble());
-                            else if (v.isBool()) lua_pushboolean(L, v.asBool());
-                            else lua_pushnil(L);
-                            lua_settable(L, -3);
-                        }
-                    } else lua_pushnil(L);
-                } else lua_pushnil(L);
-                lua_settable(L, -3);
-
-                lua_pushstring(L, "query");
-                lua_newtable(L);
-                for (auto &[k, v]: req.query) pushKV(k.c_str(), v);
-                lua_settable(L, -3);
-
-                for (auto &a: args)
-                    lua_pushlstring(L, a.data(), a.size());
-
-                if (lua_pcall(L, 1 + static_cast<int>(args.size()), 1, 0) != LUA_OK) {
-                    std::cerr << RED "[Lua Error] " << lua_tostring(L, -1) << RESET "\n";
-                    res.status = 500;
-                    res.body = ERROR_MSG_500;
+            if (!earlyExit) {
+                if (req.method == "GET" && req.path == "/") {
+                    Router::match("GET", "/", luaRef, args);
                 } else {
-                    try {
-                        if (lua_istable(L, -1)) {
-                            lua_getfield(L, -1, "status");
-                            if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
-                            lua_pop(L, 1);
+                    Router::match(req.method, req.path, luaRef, args);
+                }
 
-                            lua_getfield(L, -1, "headers");
+                if (luaRef) {
+                    lua_rawgeti(L, LUA_REGISTRYINDEX, luaRef);
+                    push_lua_request(L, req);
+
+                    for (auto &a: args)
+                        lua_pushlstring(L, a.data(), a.size());
+
+                    if (lua_pcall(L, 1 + static_cast<int>(args.size()), 1, 0) != LUA_OK) {
+                        std::cerr << RED "[Lua Error] " << lua_tostring(L, -1) << RESET "\n";
+                        res.status = 500;
+                        res.body = ERROR_MSG_500;
+                    } else {
+                        try {
                             if (lua_istable(L, -1)) {
-                                lua_pushnil(L);
-                                while (lua_next(L, -2)) {
-                                    res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
-                                    lua_pop(L, 1);
-                                }
-                            }
-                            lua_pop(L, 1);
+                                lua_getfield(L, -1, "status");
+                                if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
+                                lua_pop(L, 1);
 
-                            lua_getfield(L, -1, "body");
-                            if (lua_isstring(L, -1)) {
+                                lua_getfield(L, -1, "headers");
+                                if (lua_istable(L, -1)) {
+                                    lua_pushnil(L);
+                                    while (lua_next(L, -2)) {
+                                        res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                                        lua_pop(L, 1);
+                                    }
+                                }
+                                lua_pop(L, 1);
+
+                                lua_getfield(L, -1, "body");
+                                if (lua_isstring(L, -1)) {
+                                    size_t sz;
+                                    const char *s = lua_tolstring(L, -1, &sz);
+                                    res.body.assign(s, sz);
+                                }
+                                lua_pop(L, 1);
+                            } else if (lua_isstring(L, -1) || lua_isnumber(L, -1)) {
                                 size_t sz;
                                 const char *s = lua_tolstring(L, -1, &sz);
                                 res.body.assign(s, sz);
                             }
-                            lua_pop(L, 1);
-                        } else if (lua_isstring(L, -1) || lua_isnumber(L, -1)) {
-                            size_t sz;
-                            const char *s = lua_tolstring(L, -1, &sz);
-                            res.body.assign(s, sz);
-                        }
 
-                        if (!res.headers.contains("Content-Type"))
+                            if (!res.headers.contains("Content-Type"))
+                                res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+                        } catch (...) {
+                            res.status = 500;
+                            res.body = ERROR_MSG_500;
                             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
-                    } catch (const std::exception &e) {
-                        std::cerr << RED "[Template Error] " << e.what() << RESET "\n";
-                        res.status = 500;
-                        res.body = ERROR_MSG_500;
-                        res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
-                    } catch (...) {
-                        std::cerr << RED "[Unknown Error] Rendering failed." RESET "\n";
-                        res.status = 500;
-                        res.body = ERROR_MSG_500;
-                        res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+                        }
                     }
+                } else {
+                    res.status = 404;
+                    res.body = ERROR_MSG_400;
+                    res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
                 }
-            } else {
-                res.status = 404;
-                res.body = ERROR_MSG_400;
-                res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+
+                // ——— AFTER REQUEST HOOK ———
+                if (LumeniteApp::after_request_ref != LUA_NOREF) {
+                    lua_rawgeti(L, LUA_REGISTRYINDEX, LumeniteApp::after_request_ref);
+                    push_lua_request(L, req);
+                    push_lua_response(L, res);
+
+                    if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+                        std::cerr << RED "[after_request error] " << lua_tostring(L, -1) << RESET "\n";
+                        lua_pop(L, 1);
+                    } else if (lua_istable(L, -1)) {
+                        lua_getfield(L, -1, "status");
+                        if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
+                        lua_pop(L, 1);
+
+                        lua_getfield(L, -1, "body");
+                        if (lua_isstring(L, -1)) res.body = lua_tostring(L, -1);
+                        lua_pop(L, 1);
+
+                        lua_getfield(L, -1, "headers");
+                        if (lua_istable(L, -1)) {
+                            lua_pushnil(L);
+                            while (lua_next(L, -2)) {
+                                res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                                lua_pop(L, 1);
+                            }
+                        }
+                        lua_pop(L, 1);
+                    }
+                    lua_pop(L, 1);
+                }
             }
-        } catch (const std::exception &e) {
-            std::cerr << RED "[Fatal Error] " << e.what() << RESET "\n";
-            res.status = 500;
-            res.body = ERROR_MSG_500;
-            res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
         } catch (...) {
-            std::cerr << RED "[Fatal Error] Unknown exception" RESET "\n";
             res.status = 500;
             res.body = ERROR_MSG_500;
             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
@@ -333,10 +403,8 @@ void Server::run()
         char ip[INET6_ADDRSTRLEN];
         inet_ntop(AF_INET, &clientAddr.sin_addr, ip, sizeof(ip));
         const char *color = res.status >= 500 ? RED : res.status >= 400 ? YELLOW : GREEN;
-        std::cout << CYAN "[Request] " RESET
-                << ip << " "
-                << BLUE << req.path << RESET " "
-                << color << res.status << RESET "\n";
+        std::cout << CYAN "[Request] " RESET << ip << " " << BLUE << req.path << RESET " " << color << res.status <<
+                RESET "\n";
 
         lua_settop(L, 0);
     }

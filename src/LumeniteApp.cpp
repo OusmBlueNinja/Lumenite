@@ -9,6 +9,10 @@
 #include <curl/curl.h>
 
 
+int LumeniteApp::before_request_ref = LUA_NOREF;
+int LumeniteApp::after_request_ref = LUA_NOREF;
+
+
 static size_t WriteCallback(void *contents, const size_t size, size_t nmemb, std::string *output)
 {
     const size_t totalSize = size * nmemb;
@@ -149,8 +153,7 @@ static int lua_http_get(lua_State *L)
 
     lua_newtable(L); // prepare return table
 
-    if (!curl)
-    {
+    if (!curl) {
         lua_pushstring(L, "status");
         lua_pushinteger(L, 0);
         lua_settable(L, -3);
@@ -174,8 +177,7 @@ static int lua_http_get(lua_State *L)
 
     res = curl_easy_perform(curl);
 
-    if (res != CURLE_OK)
-    {
+    if (res != CURLE_OK) {
         curl_easy_cleanup(curl);
 
         lua_pushstring(L, "status");
@@ -207,6 +209,44 @@ static int lua_http_get(lua_State *L)
     return 1;
 }
 
+int LumeniteApp::lua_before_request(lua_State *L)
+{
+    if (lua_gettop(L) != 1) {
+        return luaL_error(L, "app.before_request expects exactly 1 argument (a function)");
+    }
+
+    if (!lua_isfunction(L, 1)) {
+        return luaL_error(L, "app.before_request expected a function like: app.before_request(function(req) ... end)");
+    }
+
+    if (before_request_ref != LUA_NOREF) {
+        return luaL_error(L, "app.before_request has already been set. Only one before_request handler is allowed.");
+    }
+
+    lua_pushvalue(L, 1);
+    before_request_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    return 0;
+}
+
+int LumeniteApp::lua_after_request(lua_State *L)
+{
+    if (lua_gettop(L) != 1) {
+        return luaL_error(L, "app.after_request expects exactly 1 argument (a function)");
+    }
+
+    if (!lua_isfunction(L, 1)) {
+        return luaL_error(
+            L, "app.after_request expected a function like: app.after_request(function(req, res) ... end)");
+    }
+
+    if (after_request_ref != LUA_NOREF) {
+        return luaL_error(L, "app.after_request has already been set. Only one after_request handler is allowed.");
+    }
+
+    lua_pushvalue(L, 1);
+    after_request_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    return 0;
+}
 
 
 // ————— Lua API Binding Exposure —————
@@ -245,6 +285,14 @@ void LumeniteApp::exposeBindings()
     lua_setfield(L, -2, "render_template");
     lua_pushcfunction(L, lua_register_template_filter);
     lua_setfield(L, -2, "template_filter");
+
+
+    lua_pushcfunction(L, lua_before_request);
+    lua_setfield(L, -2, "before_request");
+
+    lua_pushcfunction(L, lua_after_request);
+    lua_setfield(L, -2, "after_request");
+
 
     lua_pushcfunction(L, lua_listen);
     lua_setfield(L, -2, "listen");
@@ -373,7 +421,7 @@ int LumeniteApp::lua_jsonify(lua_State *L)
 
     Json::Value root = lua_to_json(L, 1);
     Json::StreamWriterBuilder w;
-    w["indentation"] = "";
+    w["indentation"] = "  ";
     std::string jsonStr = Json::writeString(w, root);
 
     lua_newtable(L); // response
