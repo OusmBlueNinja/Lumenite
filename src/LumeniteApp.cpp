@@ -9,7 +9,9 @@
 #include <curl/curl.h>
 #include <filesystem> // required for file check
 #include "ErrorHandler.h"
+
 #include "modules/LumeniteDb.h"
+#include "modules/LumeniteCrypto.h"
 
 bool running = false;
 
@@ -325,6 +327,11 @@ static int builtin_module_loader(lua_State *L)
 
     if (strcmp(mod, "LumeniteDB") == 0) {
         lua_pushcfunction(L, luaopen_LumeniteDB);
+        return 1;
+    }
+
+    if (strcmp(mod, "LumeniteCrypto") == 0) {
+        lua_pushcfunction(L, LumeniteCrypto::luaopen);
         return 1;
     }
 
