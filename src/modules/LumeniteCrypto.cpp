@@ -2,14 +2,15 @@
 #include <openssl/sha.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
-#include <openssl/hmac.h>
 #include <openssl/err.h>
+#include <openssl/crypto.h>
 #include <sstream>
 #include <iomanip>
 #include <vector>
 #include <cstring>
 #include <lua.hpp>
 
+// Convert bytes to hex
 static std::string to_hex(const unsigned char *data, size_t len)
 {
     std::ostringstream oss;
@@ -31,81 +32,113 @@ static int l_random_bytes(lua_State *L)
 {
     int len = luaL_checkinteger(L, 1);
     std::vector<unsigned char> buf(len);
-    RAND_bytes(buf.data(), len);
+    if (RAND_bytes(buf.data(), len) != 1)
+        return luaL_error(L, "RAND_bytes failed");
     lua_pushlstring(L, (const char *) buf.data(), len);
     return 1;
 }
 
-// AES-256-CBC encryption (IV + ciphertext)
+// AES-256-CBC encryption
 static int l_encrypt(lua_State *L)
 {
-    const char *key = luaL_checkstring(L, 1);
-    const char *plaintext = luaL_checkstring(L, 2);
+    size_t key_len, plain_len;
+    const char *key = luaL_checklstring(L, 1, &key_len);
+    const char *plaintext = luaL_checklstring(L, 2, &plain_len);
 
-    if (strlen(key) != 32) {
-        lua_pushnil(L);
-        lua_pushstring(L, "Key must be 32 bytes");
-        return 2;
-    }
+    if (key_len != 32)
+        return luaL_error(L, "Key must be exactly 32 bytes");
 
-    int len;
-    size_t plaintext_len = strlen(plaintext);
-    std::vector<unsigned char> ciphertext(plaintext_len + EVP_MAX_BLOCK_LENGTH);
     unsigned char iv[16];
-    RAND_bytes(iv, sizeof(iv));
+    if (RAND_bytes(iv, sizeof(iv)) != 1)
+        return luaL_error(L, "Failed to generate IV");
+
+    std::vector<unsigned char> ciphertext(plain_len + EVP_MAX_BLOCK_LENGTH);
+    int len, total_len = 0;
 
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, (const unsigned char *) key, iv);
-    EVP_EncryptUpdate(ctx, ciphertext.data(), &len, (const unsigned char *) plaintext, plaintext_len);
-    int ciphertext_len = len;
-    EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len);
-    ciphertext_len += len;
+    if (!ctx)
+        return luaL_error(L, "EVP_CIPHER_CTX_new failed");
+
+    if (!EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, (const unsigned char *) key, iv)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return luaL_error(L, "EVP_EncryptInit_ex failed");
+    }
+
+    if (!EVP_EncryptUpdate(ctx, ciphertext.data(), &len, (const unsigned char *) plaintext, plain_len)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return luaL_error(L, "EVP_EncryptUpdate failed");
+    }
+    total_len += len;
+
+    if (!EVP_EncryptFinal_ex(ctx, ciphertext.data() + total_len, &len)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return luaL_error(L, "EVP_EncryptFinal_ex failed");
+    }
+    total_len += len;
     EVP_CIPHER_CTX_free(ctx);
 
     std::string result((const char *) iv, sizeof(iv));
-    result.append((const char *) ciphertext.data(), ciphertext_len);
+    result.append((const char *) ciphertext.data(), total_len);
     lua_pushlstring(L, result.data(), result.size());
     return 1;
 }
 
 static int l_decrypt(lua_State *L)
 {
-    const char *key = luaL_checkstring(L, 1);
-    size_t len;
-    const char *input = luaL_checklstring(L, 2, &len);
+    size_t key_len, input_len;
+    const char *key = luaL_checklstring(L, 1, &key_len);
+    const char *input = luaL_checklstring(L, 2, &input_len);
 
-    if (strlen(key) != 32 || len < 16) {
-        lua_pushnil(L);
-        lua_pushstring(L, "Invalid key or input");
-        return 2;
-    }
+    if (key_len != 32)
+        return luaL_error(L, "Key must be exactly 32 bytes");
+
+    if (input_len < 16)
+        return luaL_error(L, "Input too short to contain IV");
 
     const unsigned char *iv = (const unsigned char *) input;
     const unsigned char *ciphertext = (const unsigned char *) (input + 16);
-    int ciphertext_len = len - 16;
+    int ciphertext_len = (int) (input_len - 16);
 
     std::vector<unsigned char> plaintext(ciphertext_len + EVP_MAX_BLOCK_LENGTH);
+    int len, total_len = 0;
 
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, (const unsigned char *) key, iv);
-    int out_len;
-    EVP_DecryptUpdate(ctx, plaintext.data(), &out_len, ciphertext, ciphertext_len);
-    int total_len = out_len;
-    EVP_DecryptFinal_ex(ctx, plaintext.data() + out_len, &out_len);
-    total_len += out_len;
+    if (!ctx)
+        return luaL_error(L, "EVP_CIPHER_CTX_new failed");
+
+    if (!EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), nullptr, (const unsigned char *) key, iv)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return luaL_error(L, "EVP_DecryptInit_ex failed");
+    }
+
+    if (!EVP_DecryptUpdate(ctx, plaintext.data(), &len, ciphertext, ciphertext_len)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return luaL_error(L, "EVP_DecryptUpdate failed");
+    }
+    total_len += len;
+
+    if (!EVP_DecryptFinal_ex(ctx, plaintext.data() + total_len, &len)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return luaL_error(L, "EVP_DecryptFinal_ex failed: data may be corrupted or key wrong");
+    }
+    total_len += len;
     EVP_CIPHER_CTX_free(ctx);
 
     lua_pushlstring(L, (const char *) plaintext.data(), total_len);
     return 1;
 }
 
+// PBKDF2-HMAC-SHA256
 static int l_secure_hash(lua_State *L)
 {
     const char *pw = luaL_checkstring(L, 1);
     unsigned char salt[16], hash[32];
-    RAND_bytes(salt, sizeof(salt));
 
-    PKCS5_PBKDF2_HMAC(pw, strlen(pw), salt, sizeof(salt), 100000, EVP_sha256(), sizeof(hash), hash);
+    if (RAND_bytes(salt, sizeof(salt)) != 1)
+        return luaL_error(L, "Failed to generate salt");
+
+    if (!PKCS5_PBKDF2_HMAC(pw, strlen(pw), salt, sizeof(salt), 100000, EVP_sha256(), sizeof(hash), hash))
+        return luaL_error(L, "PBKDF2 hashing failed");
 
     std::ostringstream oss;
     oss << "$pbkdf2$100000$" << to_hex(salt, 16) << "$" << to_hex(hash, 32);
@@ -119,6 +152,7 @@ static int l_secure_verify(lua_State *L)
     const char *stored = luaL_checkstring(L, 2);
     int iters;
     char salt_hex[33], hash_hex[65];
+
     if (sscanf(stored, "$pbkdf2$%d$%32[^$]$%64s", &iters, salt_hex, hash_hex) != 3) {
         lua_pushboolean(L, 0);
         return 1;
@@ -128,7 +162,10 @@ static int l_secure_verify(lua_State *L)
     for (int i = 0; i < 16; ++i) sscanf(salt_hex + 2 * i, "%2hhx", &salt[i]);
     for (int i = 0; i < 32; ++i) sscanf(hash_hex + 2 * i, "%2hhx", &expected[i]);
 
-    PKCS5_PBKDF2_HMAC(pw, strlen(pw), salt, sizeof(salt), iters, EVP_sha256(), sizeof(computed), computed);
+    if (!PKCS5_PBKDF2_HMAC(pw, strlen(pw), salt, sizeof(salt), iters, EVP_sha256(), sizeof(computed), computed)) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
 
     lua_pushboolean(L, CRYPTO_memcmp(expected, computed, 32) == 0);
     return 1;
@@ -137,6 +174,7 @@ static int l_secure_verify(lua_State *L)
 int LumeniteCrypto::luaopen(lua_State *L)
 {
     lua_newtable(L);
+
     lua_pushcfunction(L, l_sha256);
     lua_setfield(L, -2, "sha256");
 
