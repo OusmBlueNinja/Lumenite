@@ -7,7 +7,11 @@
 #include <chrono>
 #include <sstream>
 #include <curl/curl.h>
+#include <filesystem> // required for file check
+#include "ErrorHandler.h"
+#include "LumeniteDb.h"
 
+bool running = false;
 
 int LumeniteApp::before_request_ref = LUA_NOREF;
 int LumeniteApp::after_request_ref = LUA_NOREF;
@@ -127,6 +131,7 @@ LumeniteApp::LumeniteApp()
     L = luaL_newstate();
     luaL_openlibs(L);
     exposeBindings();
+    injectBuiltins();
 }
 
 LumeniteApp::~LumeniteApp()
@@ -134,13 +139,26 @@ LumeniteApp::~LumeniteApp()
     lua_close(L);
 }
 
-// ————— Script Loader —————
+
 void LumeniteApp::loadScript(const std::string &path)
 {
+    namespace fs = std::filesystem;
+
+    if (!fs::exists(path)) {
+        ErrorHandler::fileMissing(path);
+        return;
+    }
+
     if (luaL_dofile(L, path.c_str())) {
-        std::cerr << "[Lua Error] " << lua_tostring(L, -1) << "\n";
+        ErrorHandler::invalidScript(lua_tostring(L, -1));
+        return;
+    }
+
+    if (!running) {
+        ErrorHandler::serverNotRunning();
     }
 }
+
 
 static int lua_http_get(lua_State *L)
 {
@@ -298,6 +316,34 @@ void LumeniteApp::exposeBindings()
     lua_setfield(L, -2, "listen");
 
     lua_setglobal(L, "app");
+}
+
+
+void LumeniteApp::injectBuiltins()
+{
+    lua_getglobal(L, "package");
+    lua_getfield(L, -1, "searchers");
+
+    lua_pushcfunction(L, [](lua_State *L) -> int {
+                      const char *mod = luaL_checkstring(L, 1);
+                      if (strcmp(mod, "LumeniteDB") == 0) {
+                      extern int luaopen_LumeniteDB(lua_State *L);
+                      lua_pushcfunction(L, luaopen_LumeniteDB);
+                      return 1;
+                      }
+
+                      lua_pushnil(L);
+                      lua_pushfstring(L, "[Lumenite] Invalid module '%s'.", mod);
+                      return 2;
+                      });
+
+    for (int i = static_cast<int>(lua_rawlen(L, -1)) + 1; i > 1; --i) {
+        lua_rawgeti(L, -1, i - 1);
+        lua_rawseti(L, -2, i);
+    }
+
+    lua_rawseti(L, -2, 1);
+    lua_pop(L, 2);
 }
 
 // ————— Route Arg Helper —————

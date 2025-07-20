@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
+# ——— JSONCPP ———
 FetchContent_Declare(
         jsoncpp
         GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
@@ -13,25 +14,35 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(jsoncpp)
 
+# ——— CURL ———
 FetchContent_Declare(
         curl
         GIT_REPOSITORY https://github.com/curl/curl.git
-        GIT_TAG curl-8_7_1 # latest stable tag as of mid-2025
+        GIT_TAG curl-8_7_1
 )
-FetchContent_MakeAvailable(curl)
-
 set(BUILD_CURL_EXE OFF CACHE INTERNAL "")
 set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")
 set(HTTP_ONLY ON CACHE INTERNAL "")
+FetchContent_MakeAvailable(curl)
 
+# ——— SQLITE3 ———
+FetchContent_Declare(
+        sqlite3
+        GIT_REPOSITORY https://github.com/sqlite/sqlite.git
+        GIT_TAG version-3.45.1
+)
+FetchContent_MakeAvailable(sqlite3)
+
+# ——— Lua (Static) ———
 file(GLOB LUA_SRC CONFIGURE_DEPENDS vendor/lua/*.c)
 add_library(lua_static STATIC ${LUA_SRC})
 target_include_directories(lua_static PUBLIC vendor/lua)
 
-add_executable(lumenite
+# ——— Source Files ———
+set(SRC_FILES
+        src/main.cpp
         src/LumeniteApp.cpp
         src/LumeniteApp.h
-        src/main.cpp
         src/Router.cpp
         src/Router.h
         src/Server.cpp
@@ -40,17 +51,26 @@ add_executable(lumenite
         src/TemplateEngine.h
         src/SessionManager.cpp
         src/SessionManager.h
+        src/ErrorHandler.cpp
+        src/ErrorHandler.h
+        src/LumeniteDb.cpp
+        src/LumeniteDb.h
 )
 
+# ——— Executable ———
+add_executable(lumenite ${SRC_FILES})
 target_include_directories(lumenite PRIVATE vendor/lua)
 
+# ——— Link Dependencies ———
 target_link_libraries(lumenite PRIVATE
         lua_static
-        jsoncpp_lib
+        jsoncpp_static
         CURL::libcurl
+        sqlite3
         ws2_32
 )
 
+# ——— Windows Only ———
 if (WIN32)
     target_link_libraries(lumenite PRIVATE iphlpapi)
-endif()
+endif ()
