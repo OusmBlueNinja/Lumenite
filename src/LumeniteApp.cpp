@@ -9,7 +9,7 @@
 #include <curl/curl.h>
 #include <filesystem> // required for file check
 #include "ErrorHandler.h"
-#include "LumeniteDb.h"
+#include "modules/LumeniteDb.h"
 
 bool running = false;
 
@@ -319,30 +319,40 @@ void LumeniteApp::exposeBindings()
 }
 
 
+static int builtin_module_loader(lua_State *L)
+{
+    const char *mod = luaL_checkstring(L, 1);
+
+    if (strcmp(mod, "LumeniteDB") == 0) {
+        lua_pushcfunction(L, luaopen_LumeniteDB);
+        return 1;
+    }
+
+    //if (strcmp(mod, "test") == 0) {
+    //    lua_pushcfunction(L, luaopen_test);
+    //    return 1;
+    //}
+
+    lua_pushnil(L);
+    lua_pushfstring(L, "[Lumenite] Invalid module '%s'.", mod);
+    return 2;
+}
+
+// ------------------------
+// Register custom searcher
+// ------------------------
 void LumeniteApp::injectBuiltins()
 {
     lua_getglobal(L, "package");
     lua_getfield(L, -1, "searchers");
 
-    lua_pushcfunction(L, [](lua_State *L) -> int {
-                      const char *mod = luaL_checkstring(L, 1);
-                      if (strcmp(mod, "LumeniteDB") == 0) {
-                      extern int luaopen_LumeniteDB(lua_State *L);
-                      lua_pushcfunction(L, luaopen_LumeniteDB);
-                      return 1;
-                      }
-
-                      lua_pushnil(L);
-                      lua_pushfstring(L, "[Lumenite] Invalid module '%s'.", mod);
-                      return 2;
-                      });
-
+    lua_pushcfunction(L, builtin_module_loader);
     for (int i = static_cast<int>(lua_rawlen(L, -1)) + 1; i > 1; --i) {
         lua_rawgeti(L, -1, i - 1);
         lua_rawseti(L, -2, i);
     }
-
     lua_rawseti(L, -2, 1);
+
     lua_pop(L, 2);
 }
 

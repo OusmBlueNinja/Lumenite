@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
-# ——— JSONCPP ———
+# ------------------ JSONCPP ------------------
 FetchContent_Declare(
         jsoncpp
         GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
@@ -14,7 +14,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(jsoncpp)
 
-# ——— CURL ———
+# ------------------ CURL ------------------
 FetchContent_Declare(
         curl
         GIT_REPOSITORY https://github.com/curl/curl.git
@@ -25,7 +25,7 @@ set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")
 set(HTTP_ONLY ON CACHE INTERNAL "")
 FetchContent_MakeAvailable(curl)
 
-# ——— SQLITE3 ———
+# ------------------ SQLITE3 ------------------
 FetchContent_Declare(
         sqlite3
         GIT_REPOSITORY https://github.com/sqlite/sqlite.git
@@ -33,13 +33,22 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sqlite3)
 
-# ——— Lua (Static) ———
+# ------------------ Lua (static) ------------------
 file(GLOB LUA_SRC CONFIGURE_DEPENDS vendor/lua/*.c)
 add_library(lua_static STATIC ${LUA_SRC})
 target_include_directories(lua_static PUBLIC vendor/lua)
 
-# ——— Source Files ———
-set(SRC_FILES
+# ------------------ OpenSSL Integration ------------------
+# Use OpenSSL installed via MSYS2 (pacman -S mingw-w64-x86_64-openssl)
+if (MINGW)
+    set(OPENSSL_ROOT_DIR "C:/msys64/mingw64")
+    set(OPENSSL_USE_STATIC_LIBS TRUE)
+endif ()
+
+find_package(OpenSSL REQUIRED)
+
+# ------------------ Main Executable ------------------
+add_executable(lumenite
         src/main.cpp
         src/LumeniteApp.cpp
         src/LumeniteApp.h
@@ -53,24 +62,29 @@ set(SRC_FILES
         src/SessionManager.h
         src/ErrorHandler.cpp
         src/ErrorHandler.h
-        src/LumeniteDb.cpp
-        src/LumeniteDb.h
+        src/modules/LumeniteDb.cpp
+        src/modules/LumeniteDb.h
+        src/modules/LumeniteCrypto.cpp
+        src/modules/LumeniteCrypto.h
 )
 
-# ——— Executable ———
-add_executable(lumenite ${SRC_FILES})
-target_include_directories(lumenite PRIVATE vendor/lua)
+# ------------------ Include Directories ------------------
+target_include_directories(lumenite PRIVATE
+        vendor/lua
+        ${OPENSSL_INCLUDE_DIR}
+)
 
-# ——— Link Dependencies ———
+# ------------------ Link Libraries ------------------
 target_link_libraries(lumenite PRIVATE
         lua_static
         jsoncpp_static
         CURL::libcurl
         sqlite3
+        OpenSSL::SSL
+        OpenSSL::Crypto
         ws2_32
 )
 
-# ——— Windows Only ———
 if (WIN32)
     target_link_libraries(lumenite PRIVATE iphlpapi)
 endif ()
