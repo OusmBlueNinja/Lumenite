@@ -1,6 +1,6 @@
 #include <sstream>
 
-#include "LumeniteDB.h"
+#include "LumeniteDb.h"
 
 // ============ C++ API ============
 
