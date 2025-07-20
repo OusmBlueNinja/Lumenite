@@ -1,12 +1,13 @@
-//
-// Created by spenc on 7/16/2025.
-//
 #include "LumeniteApp.h"
+#include <iostream>
+#include <string>
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
-void enableAnsiColors() {
+void enableAnsiColors()
+{
 #ifdef _WIN32
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD dwMode = 0;
@@ -17,10 +18,17 @@ void enableAnsiColors() {
 #endif
 }
 
-
-int main() {
+int main(int argc, char *argv[])
+{
     enableAnsiColors();
+
+    std::string scriptPath = "app.lua"; // default
+
+    if (argc >= 2) {
+        scriptPath = argv[1];
+    }
+
     LumeniteApp app;
-    app.loadScript("app.lua");
+    app.loadScript(scriptPath);
     return 0;
 }

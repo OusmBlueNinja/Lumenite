@@ -31,6 +31,9 @@ private:
 
     void exposeBindings();
 
+    void injectBuiltins();
+
+
     static int lua_route_get(lua_State *L);
 
     static int lua_route_post(lua_State *L);
