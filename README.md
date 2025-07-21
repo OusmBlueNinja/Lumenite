@@ -32,7 +32,7 @@ tooling.
 ### Clone & Build
 
 ```bash
-git clone https://github.com/OusmBlueNinja/Lumenite.git
+git clone https://dock-it.dev/GigabiteHosting/Lumenite.git
 cd Lumenite
 mkdir build && cd build
 cmake ..
