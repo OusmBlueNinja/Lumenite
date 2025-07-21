@@ -1,13 +1,17 @@
 #include "Server.h"
 #include "Router.h"
-#include <json/json.h>
-#include <iostream>
-#include <vector>
-#include <cstring>
-#include <iomanip>
+
 #include "LumeniteApp.h"
 #include "SessionManager.h"
 
+#include <json/json.h>
+
+#include <iostream>
+#include <iomanip>
+#include <vector>
+#include <sstream>
+#include <ctime>
+#include <cstring>
 
 #ifdef _WIN32
 
@@ -23,6 +27,7 @@ typedef SOCKET SocketType;
   #include <unistd.h>
 typedef int SocketType;
 #endif
+
 
 #define BOLD   "\033[1m"
 #define CYAN   "\033[36m"
@@ -400,11 +405,26 @@ void Server::run()
 
         sendResponse(clientSock, res.serialize());
 
+
         char ip[INET6_ADDRSTRLEN];
         inet_ntop(AF_INET, &clientAddr.sin_addr, ip, sizeof(ip));
+
+        // Build timestamp: [21/Jul/2025:12:47:32]
+        std::ostringstream timeStream;
+        std::time_t now = std::time(nullptr);
+        std::tm *ltm = std::localtime(&now);
+        timeStream << "[" << std::put_time(ltm, "%d/%b/%Y:%H:%M:%S") << "]";
+
         const char *color = res.status >= 500 ? RED : res.status >= 400 ? YELLOW : GREEN;
-        std::cout << CYAN "[Request] " RESET << ip << " " << BLUE << req.path << RESET " " << color << res.status <<
-                RESET "\n";
+
+        std::string method = req.method;
+
+        std::cout << timeStream.str() << " "
+                << color << res.status << RESET << " "
+                << method << " "
+                << req.path << " - "
+                << ip << "\n";
+
 
         lua_settop(L, 0);
     }
