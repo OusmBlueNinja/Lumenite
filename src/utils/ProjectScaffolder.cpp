@@ -37,7 +37,7 @@ void ProjectScaffolder::createWorkspace(const std::string &name)
 
     // Create directories
     createDir(root / "templates");
-    createDir(root / "types");
+    createDir(root / ".lumenite");
     createDir(root / ".vscode");
 
     // app.lua
@@ -86,7 +86,7 @@ app:listen(8080)
 )");
 
     // types/__syntax__.lua
-    writeFile(root / "types" / "__syntax__.lua", R"(---@meta
+    writeFile(root / ".lumenite" / "__syntax__.lua", R"(---@meta
 -- Lumenite IntelliSense file
 
 ---@class Request
@@ -94,10 +94,7 @@ app:listen(8080)
 ---@field path string
 ---@field body string
 ---@field headers table<string, string>
----@field query table<string, string|string[]>
----@field form table<string, string|string[]>
----@field remote_ip string
-
+---@field query table<string, string>
 
 ---@class Response
 ---@field status integer
@@ -134,12 +131,13 @@ function app:session_set(key, value) end
 ---@param filename string
 ---@param context table
 ---@return string
-function app:render_template(filename, context) return "" end
+function app.render_template(filename, context) return "" end
+
 
 ---@param template_string string
 ---@param context table
 ---@return string
-function app:render_template_string(template_string, context) return "" end
+function app.render_template_string(template_string, context) return "" end
 
 ---@param name string
 ---@param fn fun(input: string): string
@@ -161,7 +159,8 @@ function app:from_json(json) return {} end
 function app:before_request(fn) end
 
 ---@param fn fun(req: Request, res: Response): Response|nil
-function app:after_request(fn) end
+function app.after_request(fn) end
+
 
 ---@param url string
 ---@return table
@@ -173,6 +172,7 @@ function app:listen(port) end
 ---@type App
 _G.app = app
 return app
+
 )");
 
     // .gitignore
