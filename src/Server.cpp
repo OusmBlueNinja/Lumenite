@@ -150,11 +150,23 @@ static void push_lua_request(lua_State *L, const HttpRequest &req)
 
     lua_pushstring(L, "query");
     lua_newtable(L);
-    for (const auto &[k, v]: req.query) {
-        lua_pushstring(L, k.c_str());
-        lua_pushstring(L, v.c_str());
-        lua_settable(L, -3);
+    for (auto &[key, values]: req.query) {
+        if (values.size() == 1) {
+            lua_pushstring(L, key.c_str());
+            lua_pushstring(L, values[0].c_str());
+            lua_settable(L, -3);
+        } else {
+            lua_pushstring(L, key.c_str());
+            lua_newtable(L);
+            for (size_t i = 0; i < values.size(); ++i) {
+                lua_pushinteger(L, i + 1);
+                lua_pushstring(L, values[i].c_str());
+                lua_settable(L, -3);
+            }
+            lua_settable(L, -3);
+        }
     }
+
     lua_settable(L, -3);
 }
 
@@ -284,7 +296,7 @@ void Server::run()
                     if (auto eq = kv.find('='); eq != std::string::npos) {
                         std::string key = urlDecode(kv.substr(0, eq));
                         std::string value = urlDecode(kv.substr(eq + 1));
-                        req.query[key] = value;
+                        req.query[key].push_back(value);
                     }
                     p = qm + 1;
                 }
@@ -293,7 +305,7 @@ void Server::run()
                 if (auto eq = kv.find('='); eq != std::string::npos) {
                     std::string key = urlDecode(kv.substr(0, eq));
                     std::string value = urlDecode(kv.substr(eq + 1));
-                    req.query[key] = value;
+                    req.query[key].push_back(value);
                 }
             }
 
