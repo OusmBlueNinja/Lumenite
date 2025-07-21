@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <algorithm>
 #include <stdexcept>
+#include <regex>
+
 
 lua_State *TemplateEngine::luaState_ = nullptr;
 std::unordered_map<std::string, int> TemplateEngine::luaFilters_;
@@ -55,63 +57,37 @@ void TemplateEngine::registerLuaFilter(const std::string &name, lua_State *L, in
 }
 
 
-std::string TemplateEngine::render(const std::string &templateName,
-                                   const std::unordered_map<std::string, std::string> &context)
-{ {
-        std::lock_guard<std::mutex> lock(cacheMutex_);
-        auto it = compiledCache_.find(templateName);
-        if (it != compiledCache_.end() && it->second.isValid) {
-            if (!config_.enableFileWatching || !isFileNewer(templateName, it->second.lastModified)) {
-                return substitute(it->second.content, context);
-            }
-        }
-    }
-
-    std::string templateContent = loadTemplate(templateName);
-    return renderFromString(templateContent, context);
-}
-
+#include <regex>
 
 std::string TemplateEngine::renderFromString(const std::string &templateText,
-                                             const std::unordered_map<std::string, std::string> &context)
+                                             const TemplateValue &context)
 {
     std::vector<std::string> includeStack;
     std::string processedContent = processIncludes(templateText, includeStack);
 
-    std::string parentFile;
     std::string workingContent = processedContent;
+    std::string parentFile;
 
-    // Look for a proper {% extends "..." %} directive
-    size_t extendsPos = workingContent.find("{% extends");
-    if (extendsPos != std::string::npos) {
-        size_t quoteStart = workingContent.find('"', extendsPos);
-        size_t quoteEnd = (quoteStart != std::string::npos)
-                              ? workingContent.find('"', quoteStart + 1)
-                              : std::string::npos;
-        size_t endTag = (quoteEnd != std::string::npos) ? workingContent.find("%}", quoteEnd) : std::string::npos;
+    // Regex match for: {% extends "filename" %}
+    std::regex extendsPattern(R"(\{\%\s*extends\s*"([^"]+)\"\s*\%\})");
+    std::smatch match;
 
-        // Validate structure
-        if (quoteStart != std::string::npos &&
-            quoteEnd != std::string::npos &&
-            endTag != std::string::npos &&
-            quoteStart < quoteEnd && quoteEnd < endTag) {
-            parentFile = workingContent.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
-            workingContent.erase(extendsPos, endTag + 2 - extendsPos);
+    if (std::regex_search(workingContent, match, extendsPattern)) {
+        parentFile = match[1];
 
-            // sanity check: must look like a filename, not HTML
-            if (parentFile.find('<') != std::string::npos || parentFile.find('>') != std::string::npos) {
-                throw std::runtime_error("Invalid parent template name: " + parentFile);
-            }
-        } else {
-            std::cerr << "Warning: Malformed {% extends %} directive ignored.\n";
+        // Validate template name
+        if (parentFile.find('<') != std::string::npos || parentFile.find('>') != std::string::npos) {
+            throw std::runtime_error("[TemplateError.SyntaxError] Invalid parent template name: " + parentFile);
         }
+
+        // Remove the entire {% extends ... %} line
+        workingContent = std::regex_replace(workingContent, extendsPattern, "");
     }
 
     std::unordered_map<std::string, std::string> childBlocks;
     std::string childBody = extractAndProcessBlocks(workingContent, childBlocks);
 
     std::string result;
-
     if (!parentFile.empty()) {
         std::string parentContent = loadTemplate(parentFile);
         std::vector<std::string> parentIncludeStack;
@@ -124,8 +100,10 @@ std::string TemplateEngine::renderFromString(const std::string &templateText,
         result = workingContent;
     }
 
+    result = processLoops(result, context);
     result = processConditionals(result, context);
-    return substitute(result, context);
+    result = substitute(result, context);
+    return result;
 }
 
 
@@ -168,26 +146,18 @@ std::string TemplateEngine::loadTemplate(const std::string &filename)
 
 std::string TemplateEngine::processIncludes(const std::string &text, std::vector<std::string> &includeStack)
 {
+    std::regex includePattern(R"(\{\%\s*include\s*"([^"]+)\"\s*\%\})");
+    std::smatch match;
     std::string result;
-    result.reserve(text.length() * 2);
+    std::string::const_iterator searchStart(text.cbegin());
 
-    size_t pos = 0;
-    while (pos < text.length()) {
-        size_t includePos = text.find("{% include", pos);
-        if (includePos == std::string::npos) {
-            result.append(text, pos, text.length() - pos);
-            break;
-        }
+    while (std::regex_search(searchStart, text.cend(), match, includePattern)) {
+        result.append(searchStart, match[0].first);
 
-        result.append(text, pos, includePos - pos);
-        size_t quoteStart = text.find('"', includePos);
-        if (quoteStart == std::string::npos) throw std::runtime_error("Malformed include directive");
-        size_t quoteEnd = text.find('"', quoteStart + 1);
-        if (quoteEnd == std::string::npos) throw std::runtime_error("Malformed include directive");
-
-        std::string filename = text.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
-        if (std::find(includeStack.begin(), includeStack.end(), filename) != includeStack.end())
+        std::string filename = match[1];
+        if (std::find(includeStack.begin(), includeStack.end(), filename) != includeStack.end()) {
             throw std::runtime_error("Circular include detected: " + filename);
+        }
 
         includeStack.push_back(filename);
         std::string includedContent = loadTemplate(filename);
@@ -195,13 +165,86 @@ std::string TemplateEngine::processIncludes(const std::string &text, std::vector
         includeStack.pop_back();
 
         result.append(processedInclude);
-        size_t endPos = text.find("%}", quoteEnd);
-        if (endPos == std::string::npos) throw std::runtime_error("Malformed include directive");
-        pos = endPos + 2;
+        searchStart = match.suffix().first;
+    }
+
+    result.append(searchStart, text.cend());
+    return result;
+}
+
+
+std::string TemplateEngine::processConditionals(const std::string &text, const TemplateValue &context)
+{
+    std::regex ifPattern(R"(\{\%\s*if\s+([^\%]+?)\s*\%\}((.|\n)*?)\{\%\s*endif\s*\%\})");
+    std::smatch match;
+    std::string result = text;
+    bool matched = true;
+
+    while (matched) {
+        matched = std::regex_search(result, match, ifPattern);
+        if (!matched) break;
+
+        std::string condition = trim(match[1]);
+        std::string block = match[2];
+
+        bool shouldShow = false;
+        auto value = resolve(context, condition);
+        if (value) {
+            std::string s = value->toString();
+            shouldShow = !s.empty() && s != "0" && s != "false";
+        }
+
+        result = match.prefix().str() + (shouldShow ? block : "") + match.suffix().str();
     }
 
     return result;
 }
+
+
+std::string TemplateEngine::processLoops(const std::string &text, const TemplateValue &ctx)
+{
+    std::regex forPattern(R"(\{\%\s*for\s+(\w+)\s+in\s+(\w+)\s*\%\}([\s\S]*?)\{\%\s*endfor\s*\%\})");
+    std::smatch match;
+    std::string result = text;
+    bool matched = true;
+
+    while (matched) {
+        matched = std::regex_search(result, match, forPattern);
+
+        if (!matched) break;
+
+        std::string loopVar = match[1];
+        std::string listName = match[2];
+        std::string block = match[3];
+
+        std::string loopOut;
+
+        auto maybeList = resolve(ctx, listName);
+        if (!maybeList || !std::holds_alternative<TemplateList>(maybeList->value)) {
+            throw std::runtime_error("[TemplateError.ValueError] List not found or invalid: " + listName);
+        }
+
+        const TemplateList &items = std::get<TemplateList>(maybeList->value);
+        for (const auto &item: items) {
+            TemplateMap combinedCtx;
+
+            if (ctx.isMap()) {
+                combinedCtx = ctx.asMap(); // copy parent context
+            }
+
+            combinedCtx[loopVar] = item;
+            TemplateValue loopCtx;
+            loopCtx.value = combinedCtx;
+
+            loopOut += substitute(block, loopCtx);
+        }
+
+        result = match.prefix().str() + loopOut + match.suffix().str();
+    }
+
+    return result;
+}
+
 
 std::string TemplateEngine::extractAndProcessBlocks(
     const std::string &text,
@@ -214,124 +257,77 @@ std::string TemplateEngine::extractAndProcessBlocks(
     while (pos < text.length()) {
         size_t blockStart = text.find("{% block", pos);
         if (blockStart == std::string::npos) {
-            stripped.append(text, pos, text.length() - pos);
+            stripped.append(text, pos);
             break;
         }
 
         stripped.append(text, pos, blockStart - pos);
 
-        size_t nameStart = blockStart + 8;
-        while (nameStart < text.length() && isspace(text[nameStart])) nameStart++;
-        size_t nameEnd = nameStart;
-        while (nameEnd < text.length() && !isspace(text[nameEnd]) && text[nameEnd] != '%' && text[nameEnd] != '}')
-            nameEnd++;
+        size_t nameStart = text.find_first_not_of(" \t\n\r", blockStart + 8);
+        if (nameStart == std::string::npos)
+            throw std::runtime_error("[TemplateError.Syntax] Malformed block name");
 
+        size_t nameEnd = text.find_first_of(" \t\r\n%}", nameStart);
         std::string blockName = text.substr(nameStart, nameEnd - nameStart);
+
         size_t headerEnd = text.find("%}", nameEnd);
-        if (headerEnd == std::string::npos) throw std::runtime_error("Malformed block header");
+        if (headerEnd == std::string::npos)
+            throw std::runtime_error("Malformed block header for: " + blockName);
         headerEnd += 2;
 
         size_t blockEnd = text.find("{% endblock %}", headerEnd);
-        if (blockEnd == std::string::npos) throw std::runtime_error("Block not closed: " + blockName);
+        if (blockEnd == std::string::npos)
+            throw std::runtime_error("Block not closed: " + blockName);
 
         blocks[blockName] = text.substr(headerEnd, blockEnd - headerEnd);
-        pos = blockEnd + 14;
+        pos = blockEnd + std::string("{% endblock %}").length();
     }
 
     return stripped;
 }
 
+
 void TemplateEngine::injectBlocks(std::string &parent,
                                   const std::unordered_map<std::string, std::string> &childBlocks)
 {
     size_t pos = 0;
-    while (pos < parent.length()) {
-        size_t blockStart = parent.find("{% block", pos);
-        if (blockStart == std::string::npos) break;
+    while ((pos = parent.find("{% block", pos)) != std::string::npos) {
+        size_t nameStart = parent.find_first_not_of(" \t\n\r", pos + 8);
+        if (nameStart == std::string::npos) break;
 
-        size_t nameStart = blockStart + 8;
-        while (nameStart < parent.length() && isspace(parent[nameStart])) nameStart++;
-        size_t nameEnd = nameStart;
-        while (nameEnd < parent.length() && !isspace(parent[nameEnd]) && parent[nameEnd] != '%' && parent[nameEnd] !=
-               '}')
-            nameEnd++;
-
+        size_t nameEnd = parent.find_first_of(" \t\r\n%}", nameStart);
         std::string blockName = parent.substr(nameStart, nameEnd - nameStart);
-        size_t headerEnd = parent.find("%}", nameEnd) + 2;
+
+        size_t headerEnd = parent.find("%}", nameEnd);
+        if (headerEnd == std::string::npos) break;
+        headerEnd += 2;
+
         size_t blockEnd = parent.find("{% endblock %}", headerEnd);
-        if (blockEnd == std::string::npos) throw std::runtime_error("Block not closed: " + blockName);
+        if (blockEnd == std::string::npos)
+            throw std::runtime_error("Block not closed: " + blockName);
 
         std::string replacement = childBlocks.count(blockName)
                                       ? childBlocks.at(blockName)
                                       : parent.substr(headerEnd, blockEnd - headerEnd);
 
-        parent.replace(blockStart, blockEnd + 14 - blockStart, replacement);
-        pos = blockStart + replacement.length();
+        parent.replace(pos, blockEnd + 14 - pos, replacement);
+        pos += replacement.length();
     }
 }
 
 
-std::string TemplateEngine::processConditionals(const std::string &text,
-                                                const std::unordered_map<std::string, std::string> &context)
+std::string TemplateEngine::substitute(const std::string &text, const TemplateValue &ctx)
 {
+    std::regex variablePattern(R"(\{\{\s*(.*?)\s*\}\})");
+    std::smatch match;
     std::string result;
-    size_t pos = 0;
-    while (pos < text.length()) {
-        size_t ifStart = text.find("{% if ", pos);
-        if (ifStart == std::string::npos) {
-            result.append(text, pos, text.size() - pos);
-            break;
-        }
+    std::string::const_iterator searchStart(text.cbegin());
 
-        result.append(text, pos, ifStart - pos);
-        size_t condStart = ifStart + 6;
-        size_t condEnd = text.find("%}", condStart);
-        if (condEnd == std::string::npos) throw std::runtime_error("Malformed if statement");
+    while (std::regex_search(searchStart, text.cend(), match, variablePattern)) {
+        result.append(searchStart, match[0].first);
 
-        std::string condition = trim(text.substr(condStart, condEnd - condStart));
-        size_t endifPos = text.find("{% endif %}", condEnd);
-        if (endifPos == std::string::npos) throw std::runtime_error("Missing {% endif %}");
-
-        std::string block = text.substr(condEnd + 2, endifPos - condEnd - 2);
-
-        bool show = context.count(condition) &&
-                    context.at(condition) != "" &&
-                    context.at(condition) != "false" &&
-                    context.at(condition) != "0";
-
-        if (show) {
-            result.append(block);
-        }
-
-        pos = endifPos + 12;
-    }
-
-    return result;
-}
-
-std::string TemplateEngine::substitute(const std::string &text,
-                                       const std::unordered_map<std::string, std::string> &context)
-{
-    std::string result;
-    result.reserve(text.size() + (text.size() >> 2));
-
-    size_t pos = 0;
-    while (true) {
-        size_t varStart = text.find("{{", pos);
-        if (varStart == std::string::npos) {
-            result.append(text, pos, text.size() - pos);
-            break;
-        }
-
-        result.append(text, pos, varStart - pos);
-        size_t varEnd = text.find("}}", varStart);
-        if (varEnd == std::string::npos)
-            throw std::runtime_error("Unclosed {{ ... }} in template");
-
-        std::string inner = trim(text.substr(varStart + 2, varEnd - varStart - 2));
-
-        // Split by '|'
-        std::istringstream ss(inner);
+        std::string expression = match[1].str(); // e.g., name|default("John")|upper
+        std::istringstream ss(expression);
         std::string segment;
         std::vector<std::string> parts;
 
@@ -339,41 +335,33 @@ std::string TemplateEngine::substitute(const std::string &text,
             parts.push_back(trim(segment));
 
         if (parts.empty())
-            throw std::runtime_error("Empty expression inside {{ }}");
+            throw std::runtime_error("Empty {{ }} expression");
 
         std::string key = parts[0];
         std::string value;
         std::string fallback;
 
-        // Lookup value
-        auto it = context.find(key);
-        if (it != context.end()) {
-            value = it->second;
-        }
+        auto resolved = resolve(ctx, key);
+        if (resolved) value = resolved->toString();
 
         for (size_t i = 1; i < parts.size(); ++i) {
-            std::string &filter = parts[i];
+            const std::string &filter = parts[i];
 
-            // Built-in default("fallback")
             if (filter.starts_with("default(") && filter.back() == ')') {
-                fallback = filter.substr(8, filter.length() - 9);
+                fallback = filter.substr(8, filter.size() - 9);
                 if (!fallback.empty() && fallback.front() == '"' && fallback.back() == '"') {
                     fallback = fallback.substr(1, fallback.size() - 2);
                 }
 
-                if (value.empty())
-                    value = fallback;
+                if (value.empty()) value = fallback;
             } else {
-                // Lua-defined filter
                 auto fit = luaFilters_.find(filter);
                 if (fit != luaFilters_.end() && luaState_) {
-                    lua_rawgeti(luaState_, LUA_REGISTRYINDEX, fit->second); // push function
+                    lua_rawgeti(luaState_, LUA_REGISTRYINDEX, fit->second);
                     lua_pushstring(luaState_, value.c_str());
                     if (lua_pcall(luaState_, 1, 1, 0) == LUA_OK) {
-                        if (lua_isstring(luaState_, -1)) {
-                            value = lua_tostring(luaState_, -1);
-                        }
-                        lua_pop(luaState_, 1); // pop result
+                        if (lua_isstring(luaState_, -1)) value = lua_tostring(luaState_, -1);
+                        lua_pop(luaState_, 1);
                     } else {
                         std::string err = lua_tostring(luaState_, -1);
                         lua_pop(luaState_, 1);
@@ -389,9 +377,10 @@ std::string TemplateEngine::substitute(const std::string &text,
             throw std::runtime_error("Missing template variable: " + key);
 
         result.append(value);
-        pos = varEnd + 2;
+        searchStart = match.suffix().first;
     }
 
+    result.append(searchStart, text.cend());
     return result;
 }
 
@@ -454,4 +443,90 @@ void TemplateEngine::evictLRU()
 std::string TemplateEngine::getFullPath(const std::string &filename)
 {
     return config_.templateDir + filename;
+}
+
+
+TemplateValue TemplateEngine::luaToTemplateValue(lua_State *L, int index)
+{
+    index = lua_absindex(L, index);
+    TemplateValue result;
+
+    if (lua_istable(L, index)) {
+        // Check if table is an array
+        bool isArray = true;
+        lua_pushnil(L);
+        while (lua_next(L, index)) {
+            if (!lua_isinteger(L, -2)) {
+                isArray = false;
+                lua_pop(L, 2);
+                break;
+            }
+            lua_pop(L, 1);
+        }
+
+        if (isArray) {
+            TemplateList list;
+            size_t len = lua_rawlen(L, index);
+            for (size_t i = 1; i <= len; ++i) {
+                lua_rawgeti(L, index, i);
+                list.push_back(luaToTemplateValue(L, -1));
+                lua_pop(L, 1);
+            }
+            result.value = list;
+        } else {
+            TemplateMap map;
+            lua_pushnil(L);
+            while (lua_next(L, index)) {
+                if (lua_type(L, -2) == LUA_TSTRING) {
+                    std::string key = lua_tostring(L, -2);
+                    map[key] = luaToTemplateValue(L, -1);
+                }
+                lua_pop(L, 1);
+            }
+            result.value = map;
+        }
+    } else if (lua_isstring(L, index)) {
+        result.value = lua_tostring(L, index);
+    } else if (lua_isnumber(L, index)) {
+        result.value = std::to_string(lua_tonumber(L, index));
+    } else if (lua_isboolean(L, index)) {
+        result.value = lua_toboolean(L, index) ? "true" : "false";
+    } else {
+        result.value = "[object]";
+    }
+
+    return result;
+}
+
+
+std::pair<bool, std::string> TemplateEngine::safeRenderFromString(
+    const std::string &templateText,
+    const TemplateValue &context)
+{
+    try {
+        std::string result = renderFromString(templateText, context);
+        return {true, result};
+    } catch (const std::exception &e) {
+        return {false, e.what()};
+    } catch (...) {
+        return {false, "Unknown rendering error."};
+    }
+}
+
+std::optional<TemplateValue> TemplateEngine::resolve(const TemplateValue &ctx, const std::string &keyPath)
+{
+    if (!ctx.isMap()) return std::nullopt;
+
+    TemplateValue current = ctx;
+    std::istringstream ss(keyPath);
+    std::string part;
+
+    while (std::getline(ss, part, '.')) {
+        if (!current.isMap()) return std::nullopt;
+        auto it = current.asMap().find(part);
+        if (it == current.asMap().end()) return std::nullopt;
+        current = it->second;
+    }
+
+    return current;
 }

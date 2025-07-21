@@ -514,71 +514,52 @@ int LumeniteApp::lua_jsonify(lua_State *L)
 }
 
 
-// ————— Template Rendering —————
 int LumeniteApp::lua_render_template_string(lua_State *L)
 {
     const char *tmpl = luaL_checkstring(L, 1);
-    std::unordered_map<std::string, std::string> ctx;
 
-    if (lua_gettop(L) >= 2 && lua_istable(L, 2)) {
-        lua_pushnil(L);
-        while (lua_next(L, 2)) {
-            if (!lua_isstring(L, -2)) {
-                lua_pop(L, 1);
-                continue;
-            }
-
-            const char *k = lua_tostring(L, -2);
-            std::string value;
-            if (lua_isstring(L, -1)) value = lua_tostring(L, -1);
-            else if (lua_isnumber(L, -1)) value = std::to_string(lua_tonumber(L, -1));
-            else if (lua_isboolean(L, -1)) value = lua_toboolean(L, -1) ? "true" : "false";
-            else if (lua_isnil(L, -1)) value = "nil";
-            else value = "[object]";
-
-            ctx.emplace(k, value);
-            lua_pop(L, 1);
-        }
+    TemplateValue root;
+    if (lua_istable(L, 2)) {
+        root = TemplateEngine::luaToTemplateValue(L, 2);
+    } else {
+        root = TemplateValue{TemplateMap{}};
     }
 
-    std::string out = TemplateEngine::renderFromString(tmpl, ctx);
-    lua_pushstring(L, out.c_str());
+    auto [ok, result] = TemplateEngine::safeRenderFromString(tmpl, root);
+    if (!ok) {
+        return luaL_error(L, "[TemplateError.Render] %s", result.c_str());
+    }
+
+    lua_pushstring(L, result.c_str());
     return 1;
 }
 
 int LumeniteApp::lua_render_template_file(lua_State *L)
 {
     const char *fn = luaL_checkstring(L, 1);
-    std::unordered_map<std::string, std::string> ctx;
 
-    if (lua_gettop(L) >= 2 && lua_istable(L, 2)) {
-        lua_pushnil(L);
-        while (lua_next(L, 2)) {
-            if (!lua_isstring(L, -2)) {
-                lua_pop(L, 1);
-                continue;
-            }
-
-            const char *k = lua_tostring(L, -2);
-            std::string value;
-            if (lua_isstring(L, -1)) value = lua_tostring(L, -1);
-            else if (lua_isnumber(L, -1)) value = std::to_string(lua_tonumber(L, -1));
-            else if (lua_isboolean(L, -1)) value = lua_toboolean(L, -1) ? "true" : "false";
-            else if (lua_isnil(L, -1)) value = "nil";
-            else value = "[object]";
-
-            ctx.emplace(k, value);
-            lua_pop(L, 1);
-        }
+    TemplateValue root;
+    if (lua_istable(L, 2)) {
+        root = TemplateEngine::luaToTemplateValue(L, 2);
+    } else {
+        root = TemplateValue{TemplateMap{}};
     }
 
-    std::string tmpl = TemplateEngine::loadTemplate(fn);
-    std::string out = TemplateEngine::renderFromString(tmpl, ctx);
-    lua_pushstring(L, out.c_str());
-    return 1;
+    try {
+        std::string tmpl = TemplateEngine::loadTemplate(fn);
+        auto [ok, result] = TemplateEngine::safeRenderFromString(tmpl, root);
+        if (!ok) {
+            return luaL_error(L, "%s", result.c_str());
+        }
+
+        lua_pushstring(L, result.c_str());
+        return 1;
+    } catch (const std::exception &e) {
+        return luaL_error(L, "[TemplateError.TemplateNotFound] %s", e.what());
+    }
 }
 
-// ————— Template Filter Registration —————
+
 int LumeniteApp::lua_register_template_filter(lua_State *L)
 {
     int nargs = lua_gettop(L);
@@ -589,16 +570,18 @@ int LumeniteApp::lua_register_template_filter(lua_State *L)
         name = lua_tostring(L, 1);
         funcIndex = 2;
     } else if (nargs == 2 && lua_istable(L, 1) && lua_isfunction(L, 2)) {
-        return luaL_error(L, "Expected app:template_filter(name, function)");
+        return luaL_error(L, "[TemplateError.Usage] Expected app:template_filter(name, function)");
     } else if (nargs == 3 && lua_istable(L, 1) && lua_isstring(L, 2) && lua_isfunction(L, 3)) {
         name = lua_tostring(L, 2);
         funcIndex = 3;
     } else {
-        return luaL_error(L, "Usage: app.template_filter(name, function) or app:template_filter(name, function)");
+        return luaL_error(
+            L,
+            "[TemplateError.Usage] Usage: app.template_filter(name, function) or app:template_filter(name, function)");
     }
 
     if (!name) {
-        return luaL_error(L, "Missing filter name");
+        return luaL_error(L, "[TemplateError.MissingName] Filter name is missing");
     }
 
     TemplateEngine::registerLuaFilter(name, L, funcIndex);
