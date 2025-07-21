@@ -139,6 +139,11 @@ static void push_lua_request(lua_State *L, const HttpRequest &req)
     lua_pushstring(L, req.body.c_str());
     lua_settable(L, -3);
 
+    lua_pushstring(L, "remote_ip");
+    lua_pushstring(L, req.remote_ip.c_str());
+    lua_settable(L, -3);
+
+
     lua_pushstring(L, "headers");
     lua_newtable(L);
     for (const auto &[k, v]: req.headers) {
@@ -166,11 +171,28 @@ static void push_lua_request(lua_State *L, const HttpRequest &req)
             lua_settable(L, -3);
         }
     }
+    lua_settable(L, -3);
 
+    lua_pushstring(L, "form");
+    lua_newtable(L);
+    for (auto &[key, values]: req.form) {
+        if (values.size() == 1) {
+            lua_pushstring(L, key.c_str());
+            lua_pushstring(L, values[0].c_str());
+        } else {
+            lua_pushstring(L, key.c_str());
+            lua_newtable(L);
+            for (size_t i = 0; i < values.size(); ++i) {
+                lua_pushinteger(L, i + 1);
+                lua_pushstring(L, values[i].c_str());
+                lua_settable(L, -3);
+            }
+        }
+        lua_settable(L, -3);
+    }
     lua_settable(L, -3);
 }
 
-// Push full response table to Lua
 static void push_lua_response(lua_State *L, const HttpResponse &res)
 {
     lua_newtable(L);
@@ -211,6 +233,22 @@ std::string urlDecode(const std::string &value)
     return result.str();
 }
 
+std::string getHeaderValue(const std::unordered_map<std::string, std::string> &headers, const std::string &key)
+{
+    std::string keyLower = key;
+    std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
+
+    for (const auto &[k, v]: headers) {
+        std::string headerKey = k;
+        std::transform(headerKey.begin(), headerKey.end(), headerKey.begin(), ::tolower);
+        if (headerKey == keyLower) {
+            return v;
+        }
+    }
+
+    return "";
+}
+
 
 void Server::run()
 {
@@ -245,9 +283,13 @@ void Server::run()
 #endif
             continue;
         }
+        char ip[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET, &clientAddr.sin_addr, ip, sizeof(ip));
+
 
         HttpRequest req;
         HttpResponse res;
+
 
         try {
             std::string_view raw(buf.data(), n);
@@ -268,6 +310,7 @@ void Server::run()
                 req.path = std::string(reqLine.substr(sp1 + 1, sp2 - sp1 - 1));
             }
 
+
             // Parse headers
             size_t pos = lineEnd + 2;
             while (pos < header.size()) {
@@ -285,6 +328,25 @@ void Server::run()
 
             // Body copy
             if (!body.empty()) req.body.assign(body.begin(), body.end());
+
+            if (req.headers["Content-Type"] == "application/x-www-form-urlencoded") {
+                std::string &body = req.body;
+
+                size_t p = 0;
+                while (p < body.size()) {
+                    size_t amp = body.find('&', p);
+                    std::string pair = body.substr(p, amp - p);
+
+                    size_t eq = pair.find('=');
+                    std::string key = urlDecode(pair.substr(0, eq));
+                    std::string val = eq != std::string::npos ? urlDecode(pair.substr(eq + 1)) : "";
+
+                    req.form[key].push_back(val); // support repeated keys
+                    if (amp == std::string::npos) break;
+                    p = amp + 1;
+                }
+            }
+
 
             if (auto qm = req.path.find('?'); qm != std::string::npos) {
                 std::string qs = req.path.substr(qm + 1);
@@ -307,6 +369,23 @@ void Server::run()
                     std::string value = urlDecode(kv.substr(eq + 1));
                     req.query[key].push_back(value);
                 }
+            }
+
+
+            req.remote_ip = ip;
+
+            std::string xfwd = getHeaderValue(req.headers, "X-Forwarded-For");
+            if (!xfwd.empty()) {
+                size_t comma = xfwd.find(',');
+                std::string firstIp = (comma != std::string::npos) ? xfwd.substr(0, comma) : xfwd;
+
+                // Trim spaces
+                size_t start = firstIp.find_first_not_of(" \t");
+                size_t end = firstIp.find_last_not_of(" \t");
+                if (start != std::string::npos && end != std::string::npos)
+                    req.remote_ip = firstIp.substr(start, end - start + 1);
+                else
+                    req.remote_ip = firstIp;
             }
 
 
@@ -446,9 +525,6 @@ void Server::run()
 
         sendResponse(clientSock, res.serialize());
 
-
-        char ip[INET6_ADDRSTRLEN];
-        inet_ntop(AF_INET, &clientAddr.sin_addr, ip, sizeof(ip));
 
         std::time_t now = std::time(nullptr);
         std::tm *ltm = std::localtime(&now);

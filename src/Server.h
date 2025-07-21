@@ -17,8 +17,9 @@ struct HttpRequest
     std::string path;
     std::unordered_map<std::string, std::string> headers;
     std::unordered_map<std::string, std::vector<std::string> > query;
-
+    std::unordered_map<std::string, std::vector<std::string> > form;
     std::string body;
+    std::string remote_ip;
 };
 
 // A simple HTTP response builder
