@@ -1,14 +1,11 @@
-Here’s a complete `README.md` for your [Lumenite](https://github.com/OusmBlueNinja/Lumenite) repo, including a **Getting Started** section, scaffold usage, GitHub star badge, and docs link:
-
----
-
-````markdown
 # ⚡ Lumenite
 
 [![Star](https://img.shields.io/github/stars/OusmBlueNinja/Lumenite?style=social)](https://github.com/OusmBlueNinja/Lumenite/stargazers)
 
-**Lumenite** is a blazing-fast, embeddable web server framework built in **C++** with a powerful **Lua scripting interface**.  
-It combines native performance with the flexibility of scripting — ideal for lightweight apps, panels, and embedded web tooling.
+**Lumenite** is a blazing-fast, embeddable web server framework built in **C++** with a powerful **Lua scripting
+interface**.  
+It combines native performance with the flexibility of scripting — ideal for lightweight apps, panels, and embedded web
+tooling.
 
 ---
 
@@ -16,8 +13,8 @@ It combines native performance with the flexibility of scripting — ideal for l
 
 - 🚀 High-performance C++ backend
 - 🧠 Lua scripting with routes, templates, JSON, sessions, and more
-- 🧩 Modular architecture (DB, Crypto, Safe escaping, etc.)
-- 🎨 Built-in templating engine (Jinja-style)
+- 🧩 Modular architecture
+- 🎨 Built-in templating engine
 - ⚙️ Built-in scaffold tool to generate starter projects
 - 🛡️ Production-grade cryptography and secure request parsing
 
@@ -51,13 +48,13 @@ This produces a `./lumenite` binary in `build/bin`.
 Lumenite includes a built-in scaffolding tool to quickly create a new web app layout:
 
 ```bash
-./lumenite --new MyApp
+./build/bin/lumenite --new MyApp
 ```
 
 This will generate the following structure in your current directory:
 
 ```
-MyApp/
+<cwd>/
 ├── app.lua                   # Main Lua entrypoint
 ├── templates/
 │   └── index.html            # Example template
@@ -67,21 +64,12 @@ MyApp/
 ├── .gitignore                # Standard ignores
 ```
 
-The generated `app.lua` contains a minimal starter app:
-
-```lua
-app:get("/", function()
-    return "<h1>Hello, Lumenite!</h1>"
-end)
-
-app:listen(8080)
-```
+The generated `app.lua` will contain a minimal starter app.
 
 Run your app:
 
 ```bash
-cd MyApp
-../build/bin/lumenite
+./build/bin/lumenite
 ```
 
 Visit [http://localhost:8080](http://localhost:8080)
@@ -96,7 +84,8 @@ Visit [http://localhost:8080](http://localhost:8080)
 
 ## ⭐️ Support the Project
 
-If you like Lumenite, please consider [starring the repository](https://github.com/OusmBlueNinja/Lumenite) to show your support!
+If you like Lumenite, please consider [starring the repository](https://github.com/OusmBlueNinja/Lumenite) to show your
+support!
 
 ---
 
@@ -104,9 +93,4 @@ If you like Lumenite, please consider [starring the repository](https://github.c
 
 MIT License — see [LICENSE](./LICENSE)
 
-```
 
----
-
-Let me know if you want a dark-mode badge, Docker install section, or to automatically publish releases/binaries!
-```
