@@ -29,13 +29,16 @@ typedef int SocketType;
 #endif
 
 
-#define BOLD   "\033[1m"
-#define CYAN   "\033[36m"
-#define BLUE   "\033[34m"
-#define GREEN  "\033[32m"
-#define YELLOW "\033[33m"
-#define RED    "\033[31m"
-#define RESET  "\033[0m"
+#define BOLD    "\033[1m"
+#define WHITE   "\033[37m"
+#define CYAN    "\033[36m"
+#define MAGENTA "\033[35m"
+#define BLUE    "\033[34m"
+#define GREEN   "\033[32m"
+#define YELLOW  "\033[33m"
+#define RED     "\033[31m"
+#define RESET   "\033[0m"
+
 
 static constexpr auto DEFAULT_CONTENT_TYPE = "text/html";
 
@@ -302,10 +305,9 @@ void Server::run()
                 lua_pop(L, 1);
             }
 
-            std::vector<std::string> args;
-            int luaRef = 0;
-
             if (!earlyExit) {
+                int luaRef = 0;
+                std::vector<std::string> args;
                 if (req.method == "GET" && req.path == "/") {
                     Router::match("GET", "/", luaRef, args);
                 } else {
@@ -409,21 +411,33 @@ void Server::run()
         char ip[INET6_ADDRSTRLEN];
         inet_ntop(AF_INET, &clientAddr.sin_addr, ip, sizeof(ip));
 
-        // Build timestamp: [21/Jul/2025:12:47:32]
-        std::ostringstream timeStream;
         std::time_t now = std::time(nullptr);
         std::tm *ltm = std::localtime(&now);
-        timeStream << "[" << std::put_time(ltm, "%d/%b/%Y:%H:%M:%S") << "]";
 
-        const char *color = res.status >= 500 ? RED : res.status >= 400 ? YELLOW : GREEN;
+        std::ostringstream dateStream, timeStream;
+        dateStream << "\033[90m" << std::put_time(ltm, "%d/%b/%Y") << RESET;
+        timeStream << WHITE << ":" << MAGENTA << std::put_time(ltm, "%H:%M:%S") << RESET;
+
+        auto statusColor = WHITE;
+
+        if (res.status >= 500) {
+            statusColor = RED;
+        } else if (res.status >= 400) {
+            statusColor = YELLOW;
+        } else if (res.status >= 300) {
+            statusColor = CYAN;
+        } else if (res.status >= 200) {
+            statusColor = GREEN;
+        }
+
 
         std::string method = req.method;
 
-        std::cout << timeStream.str() << " "
-                << color << res.status << RESET << " "
-                << method << " "
-                << req.path << " - "
-                << ip << "\n";
+        std::cout << BOLD << "[" << dateStream.str() << timeStream.str() << "]" << RESET " "
+                << BOLD << WHITE << std::left << std::setw(16) << ip << RESET
+                << statusColor << res.status << RESET " "
+                << CYAN << method << RESET " "
+                << BLUE << req.path << RESET << "\n";
 
 
         lua_settop(L, 0);
@@ -438,7 +452,6 @@ void Server::run()
 }
 
 
-std::string Server::receiveRequest(int clientSocket) { return ""; }
 
 void Server::sendResponse(int clientSocket, const std::string &out)
 {

@@ -2,15 +2,11 @@
 // Created by spenc on 7/21/2025.
 //
 
-#ifndef PROJECTSCAFFOLDER_H
-#define PROJECTSCAFFOLDER_H
+#pragma once
+#include <string>
 
-
-
-class ProjectScaffolder {
-
+class ProjectScaffolder
+{
+public:
+    static void createWorkspace(const std::string &name);
 };
-
-
-
-#endif //PROJECTSCAFFOLDER_H
