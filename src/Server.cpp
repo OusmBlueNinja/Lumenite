@@ -13,11 +13,13 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
+
 #else
   #include <sys/socket.h>
   #include <netinet/in.h>
   #include <arpa/inet.h>
   #include <unistd.h>
+typedef int SocketType;
 #endif
 
 #define BOLD   "\033[1m"
@@ -176,7 +178,7 @@ void Server::run()
     WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
 
-    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+    SocketType sock = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
