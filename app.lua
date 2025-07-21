@@ -1,3 +1,6 @@
+local safe = require("LumeniteSafe")
+
+
 -- hello.lua
 -- Simple Lumenite demo with HTML and JSON responses
 
@@ -54,7 +57,7 @@ end)
 app:get("/template", function(req)
     local users = {
         { id = 1, name = "Alice" },
-        { id = 2, name = "Bob" },
+        { id = 2 },
         { id = 3, name = "Charlie" }
     }
 
@@ -64,7 +67,18 @@ app:get("/template", function(req)
         title = "This HTML page is rendered using a Jinja-style template!",
         message = "This HTML page is rendered using a Jinja-style template!",
         timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC"), -- UTC time
-        users = users
+        users = users,
+        name = "Guest",
+        show_example = [[
+{% for user in users %}
+<li>
+    ID: <strong>{{ user.id | default(\"N/A\") }}</strong> —
+    Name: <strong>{{ user.name | default(\"N/A\") }}</strong>
+</li>
+{% endfor %}
+
+]]
+
     })
 end)
 
@@ -80,6 +94,24 @@ app:get("/json", function()
         timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
     })
 end)
+
+app.before_request(function(req)
+    -- print(req.headers["User-Agent"])
+end)
+
+app.after_request(function(req, res)
+    res.headers["X-Powered-By"] = "Lumenite"
+    return res
+end)
+
+app:template_filter("greet", function(input)
+    return "Hello, " .. input .. "!"
+end)
+
+app:template_filter("safe", function(input)
+    return safe.escape(input)
+end)
+
 
 -- Start server on port 8080
 app:listen(8080)
