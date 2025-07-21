@@ -112,6 +112,19 @@ app:template_filter("safe", function(input)
     return safe.escape(input)
 end)
 
+app:post("/", function(req)
+
+    return app.jsonify({ req })
+
+end)
+
+app:get("/whoami", function(req)
+
+    return app.jsonify({ req })
+
+end)
+
+
 
 -- Start server on port 8080
 app:listen(8080)
