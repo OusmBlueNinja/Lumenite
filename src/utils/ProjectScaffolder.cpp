@@ -94,7 +94,10 @@ app:listen(8080)
 ---@field path string
 ---@field body string
 ---@field headers table<string, string>
----@field query table<string, string>
+---@field query table<string, string|string[]>
+---@field form table<string, string|string[]>
+---@field remote_ip string
+
 
 ---@class Response
 ---@field status integer

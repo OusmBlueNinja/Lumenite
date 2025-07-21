@@ -1,18 +1,22 @@
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <random>
+#include <sstream>
+
+#include <json/json.h>
+#include <curl/curl.h>
+
+#include "ErrorHandler.h"
 #include "LumeniteApp.h"
 #include "Server.h"
 #include "TemplateEngine.h"
-#include <json/json.h>
-#include <iostream>
-#include <random>
-#include <chrono>
-#include <sstream>
-#include <curl/curl.h>
-#include <filesystem>
-#include "ErrorHandler.h"
 
-#include "modules/LumeniteDb.h"
 #include "modules/LumeniteCrypto.h"
+#include "modules/LumeniteDb.h"
 #include "modules/LumeniteSafe.h"
+
 
 bool running = false;
 
@@ -170,15 +174,32 @@ int LumeniteApp::loadScript(const std::string &path) const
         return 1;
     }
 
-    if (luaL_dofile(L, path.c_str())) {
-        ErrorHandler::invalidScript(lua_tostring(L, -1));
+    lua_getglobal(L, "debug");
+    lua_getfield(L, -1, "traceback");
+    lua_remove(L, -2);
+    int tracebackIndex = lua_gettop(L);
+
+    int loadStatus = luaL_loadfile(L, path.c_str());
+    if (loadStatus != LUA_OK) {
+        std::string err = lua_tostring(L, -1);
+        lua_pop(L, 1);
+        ErrorHandler::invalidScript(err);
         return 2;
     }
+
+    if (lua_pcall(L, 0, LUA_MULTRET, tracebackIndex) != LUA_OK) {
+        ErrorHandler::invalidScript(lua_tostring(L, -1));
+        lua_pop(L, 1);
+        return 2;
+    }
+
+    lua_remove(L, tracebackIndex);
 
     if (!running) {
         ErrorHandler::serverNotRunning();
         return 3;
     }
+
     return 0;
 }
 

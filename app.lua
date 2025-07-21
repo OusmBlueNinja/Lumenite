@@ -101,6 +101,8 @@ end)
 
 app.after_request(function(req, res)
     res.headers["X-Powered-By"] = "Lumenite"
+    res.headers["X-Host"] = req.remote_ip
+
     return res
 end)
 
@@ -119,11 +121,17 @@ app:post("/", function(req)
 end)
 
 app:get("/whoami", function(req)
-
     return app.jsonify({ req })
 
 end)
 
+app:post("/form_post", function(req)
+    return app.jsonify({ req })
+end)
+
+app:get("/form", function(req)
+    return app.render_template("form_test.html")
+end)
 
 
 -- Start server on port 8080

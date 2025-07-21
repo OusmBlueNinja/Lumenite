@@ -7,7 +7,7 @@
 
 void ErrorHandler::fileMissing(const std::string &filepath)
 {
-    std::cerr << "\033[1;31m[Error]\033[0m Lua script not found: \033[1m" << filepath << "\033[0m\n"
+    std::cout << "\033[1;31m[Error]\033[0m Lua script not found: \033[1m" << filepath << "\033[0m\n"
             << "Make sure the file path is correct and the script exists.\n"
             << "Example usage:\n\n"
             << "  \033[36m./lumenite app.lua\033[0m\n\n";
@@ -27,5 +27,5 @@ void ErrorHandler::serverNotRunning()
 
 void ErrorHandler::invalidScript(const std::string &error)
 {
-    std::cerr << "\033[1;31m[Lua Error]\033[0m " << error << "\n";
+    std::cout << RED << "[Lua Error] " << error << RESET << "\n";
 }
