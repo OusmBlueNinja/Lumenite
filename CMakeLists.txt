@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
-# ------------------ JSONCPP ------------------
 FetchContent_Declare(
         jsoncpp
         GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
@@ -14,7 +13,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(jsoncpp)
 
-# ------------------ CURL ------------------
 FetchContent_Declare(
         curl
         GIT_REPOSITORY https://github.com/curl/curl.git
@@ -25,7 +23,6 @@ set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")
 set(HTTP_ONLY ON CACHE INTERNAL "")
 FetchContent_MakeAvailable(curl)
 
-# ------------------ SQLITE3 (Amalgamation) ------------------
 FetchContent_Declare(
         sqlite3
         URL https://www.sqlite.org/2024/sqlite-amalgamation-3450100.zip
@@ -39,12 +36,10 @@ target_include_directories(sqlite3 PUBLIC
         ${sqlite3_SOURCE_DIR}
 )
 
-# ------------------ Lua (static) ------------------
 file(GLOB LUA_SRC CONFIGURE_DEPENDS vendor/lua/*.c)
 add_library(lua_static STATIC ${LUA_SRC})
 target_include_directories(lua_static PUBLIC vendor/lua)
 
-# ------------------ OpenSSL Integration ------------------
 if (MINGW)
     set(OPENSSL_ROOT_DIR "C:/msys64/mingw64")
     set(OPENSSL_USE_STATIC_LIBS TRUE)
@@ -52,7 +47,6 @@ endif ()
 
 find_package(OpenSSL REQUIRED)
 
-# ------------------ Main Executable ------------------
 add_executable(lumenite
         src/main.cpp
         src/LumeniteApp.cpp
@@ -75,14 +69,12 @@ add_executable(lumenite
         src/modules/LumeniteSafe.h
 )
 
-# ------------------ Include Directories ------------------
 target_include_directories(lumenite PRIVATE
         vendor/lua
         ${OPENSSL_INCLUDE_DIR}
         ${sqlite3_SOURCE_DIR}
 )
 
-# ------------------ Link Libraries ------------------
 target_link_libraries(lumenite PRIVATE
         lua_static
         jsoncpp_static
