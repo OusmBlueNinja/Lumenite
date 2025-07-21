@@ -27,7 +27,7 @@ app:get("/", function()
     <p>This is a minimal web app running on the Lumenite framework.</p>
     <p>Try the <a href="/json">JSON endpoint</a> too.</p>
 
-    <p>Check out the <a href="/templates">Template Engine!</a> aswell.</p>
+    <p>Check out the <a href="/template">Template Engine!</a> as well.</p>
 
 
     <p id="timestamp">Loading time...</p>
