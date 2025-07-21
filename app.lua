@@ -101,6 +101,8 @@ end)
 
 app.after_request(function(req, res)
     res.headers["X-Powered-By"] = "Lumenite"
+    res.headers["X-Host"] = req.remote_ip
+
     return res
 end)
 
