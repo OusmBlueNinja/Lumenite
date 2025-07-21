@@ -126,6 +126,13 @@ app:get("/whoami", function(req)
 
 end)
 
+app:post("/form_post", function(req)
+    return app.jsonify({ req })
+end)
+
+app:get("/form", function(req)
+    return app.render_template("form_test.html")
+end)
 
 
 -- Start server on port 8080
