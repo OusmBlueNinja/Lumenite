@@ -91,6 +91,6 @@ support!
 
 ## 📜 License
 
-MIT License — see [LICENSE](./LICENSE)
+Creative Commons Attribution-ShareAlike 4.0 International — see [LICENSE](./LICENSE)
 
 
