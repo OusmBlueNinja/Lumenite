@@ -66,6 +66,8 @@ add_executable(lumenite
         src/modules/LumeniteDb.h
         src/modules/LumeniteCrypto.cpp
         src/modules/LumeniteCrypto.h
+        src/modules/LumeniteSafe.cpp
+        src/modules/LumeniteSafe.h
 )
 
 # ------------------ Include Directories ------------------
