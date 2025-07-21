@@ -44,13 +44,23 @@ void ProjectScaffolder::createWorkspace(const std::string &name)
     writeFile(root / "app.lua", R"(-- app.lua
 local safe = require("LumeniteSafe")
 
-app:get("/", function()
+app:get("/", function(request)
     return app.render_template("index.html", {
         title = "Welcome to Lumenite!",
         message = "This page is rendered using a template.",
         timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC")
     })
 end)
+
+app.after_request(function(request, response)
+    response.headers["X-Powered-By"] = "Lumenite"
+    return response
+end)
+
+app:template_filter("safe", function(input)
+    return safe.escape(input)
+end)
+
 
 app:listen(8080)
 )");
