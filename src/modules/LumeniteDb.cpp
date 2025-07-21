@@ -2,7 +2,6 @@
 
 #include "LumeniteDb.h"
 
-// ============ C++ API ============
 
 bool LumeniteDB::DB::open(const std::string &file)
 {
@@ -34,7 +33,9 @@ LumeniteDB::DB::~DB()
     if (handle) sqlite3_close(handle);
 }
 
-// ============ Lua Binding ============
+
+
+
 
 LumeniteDB::DB **LumeniteDB::check(lua_State *L)
 {
@@ -195,7 +196,6 @@ int LumeniteDB::db_sanitize(lua_State *L)
 }
 
 
-// ============ Lua Module Entry Point ============
 
 extern "C" int luaopen_LumeniteDB(lua_State *L)
 {
@@ -222,12 +222,11 @@ extern "C" int luaopen_LumeniteDB(lua_State *L)
     lua_setfield(L, -2, "sanitize");
 
 
-    // Create instance and set metatable
     DB **ud = static_cast<DB **>(lua_newuserdata(L, sizeof(DB *)));
     *ud = new DB();
 
     luaL_getmetatable(L, "LumeniteDB");
     lua_setmetatable(L, -2);
 
-    return 1; // return instance
+    return 1;
 }
