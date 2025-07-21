@@ -161,7 +161,7 @@ LumeniteApp::~LumeniteApp()
 }
 
 
-int LumeniteApp::loadScript(const std::string &path)
+int LumeniteApp::loadScript(const std::string &path) const
 {
     namespace fs = std::filesystem;
 
@@ -179,6 +179,7 @@ int LumeniteApp::loadScript(const std::string &path)
         ErrorHandler::serverNotRunning();
         return 3;
     }
+    return 0;
 }
 
 
