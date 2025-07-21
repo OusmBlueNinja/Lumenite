@@ -12,6 +12,7 @@
 
 #include "modules/LumeniteDb.h"
 #include "modules/LumeniteCrypto.h"
+#include "modules/LumeniteSafe.h"
 
 bool running = false;
 
@@ -332,6 +333,11 @@ static int builtin_module_loader(lua_State *L)
 
     if (strcmp(mod, "LumeniteCrypto") == 0) {
         lua_pushcfunction(L, LumeniteCrypto::luaopen);
+        return 1;
+    }
+
+    if (strcmp(mod, "LumeniteSafe") == 0) {
+        lua_pushcfunction(L, LumeniteSafe::luaopen);
         return 1;
     }
 

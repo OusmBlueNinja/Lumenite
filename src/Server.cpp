@@ -1,4 +1,3 @@
-// Server.cpp
 #include "Server.h"
 #include "Router.h"
 #include <json/json.h>
@@ -94,7 +93,7 @@ void printLocalIPs(int port)
             std::string ipStr = ip;
 
             if (
-                ipStr.rfind("169.254.", 0) != 0 &&  // Ignore link-local
+                ipStr.rfind("169.254.", 0) != 0 &&
                 ipStr != "0.0.0.0"
             ) {
                 addresses.emplace_back(ipStr);
@@ -114,7 +113,6 @@ void printLocalIPs(int port)
 }
 
 
-// Push full request table to Lua
 static void push_lua_request(lua_State *L, const HttpRequest &req)
 {
     lua_newtable(L);
@@ -265,7 +263,6 @@ void Server::run()
 
             bool earlyExit = false;
 
-            // ——— BEFORE REQUEST HOOK ———
             if (LumeniteApp::before_request_ref != LUA_NOREF) {
                 lua_rawgeti(L, LUA_REGISTRYINDEX, LumeniteApp::before_request_ref);
                 push_lua_request(L, req);
@@ -361,7 +358,6 @@ void Server::run()
                     res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
                 }
 
-                // ——— AFTER REQUEST HOOK ———
                 if (LumeniteApp::after_request_ref != LUA_NOREF) {
                     lua_rawgeti(L, LUA_REGISTRYINDEX, LumeniteApp::after_request_ref);
                     push_lua_request(L, req);
