@@ -33,13 +33,20 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sqlite3)
 
+# Manually define sqlite3 library from source file
+add_library(sqlite3 STATIC
+        ${sqlite3_SOURCE_DIR}/sqlite3.c
+)
+target_include_directories(sqlite3 PUBLIC
+        ${sqlite3_SOURCE_DIR}
+)
+
 # ------------------ Lua (static) ------------------
 file(GLOB LUA_SRC CONFIGURE_DEPENDS vendor/lua/*.c)
 add_library(lua_static STATIC ${LUA_SRC})
 target_include_directories(lua_static PUBLIC vendor/lua)
 
 # ------------------ OpenSSL Integration ------------------
-# Use OpenSSL installed via MSYS2 (pacman -S mingw-w64-x86_64-openssl)
 if (MINGW)
     set(OPENSSL_ROOT_DIR "C:/msys64/mingw64")
     set(OPENSSL_USE_STATIC_LIBS TRUE)
@@ -74,6 +81,7 @@ add_executable(lumenite
 target_include_directories(lumenite PRIVATE
         vendor/lua
         ${OPENSSL_INCLUDE_DIR}
+        ${sqlite3_SOURCE_DIR}  # Include sqlite3.h path
 )
 
 # ------------------ Link Libraries ------------------
