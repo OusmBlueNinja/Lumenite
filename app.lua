@@ -27,6 +27,9 @@ app:get("/", function()
     <p>This is a minimal web app running on the Lumenite framework.</p>
     <p>Try the <a href="/json">JSON endpoint</a> too.</p>
 
+    <p>Check out the <a href="/templates">Template Engine!</a> aswell.</p>
+
+
     <p id="timestamp">Loading time...</p>
 
     <script>
@@ -55,6 +58,8 @@ app:get("/template", function(req)
         { id = 3, name = "Charlie" }
     }
 
+
+    -- Note: The template engine is not Jinja2, its just a start of a Jinja2 Compatible Engine.
     return app.render_template("template_demo.html", {
         title = "This HTML page is rendered using a Jinja-style template!",
         message = "This HTML page is rendered using a Jinja-style template!",
