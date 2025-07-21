@@ -430,13 +430,19 @@ void Server::run()
             statusColor = GREEN;
         }
 
+        const char *methodColor = nullptr;
+        if (req.method == "GET") methodColor = CYAN;
+        else if (req.method == "POST") methodColor = BLUE;
+        else if (req.method == "DELETE") methodColor = RED;
+        else methodColor = WHITE;
+
 
         std::string method = req.method;
 
         std::cout << BOLD << "[" << dateStream.str() << timeStream.str() << "]" << RESET " "
                 << BOLD << WHITE << std::left << std::setw(16) << ip << RESET
                 << statusColor << res.status << RESET " "
-                << CYAN << method << RESET " "
+                << methodColor << method << RESET " "
                 << BLUE << req.path << RESET << "\n";
 
 
@@ -450,7 +456,6 @@ void Server::run()
     close(sock);
 #endif
 }
-
 
 
 void Server::sendResponse(int clientSocket, const std::string &out)
