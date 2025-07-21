@@ -515,16 +515,18 @@ std::pair<bool, std::string> TemplateEngine::safeRenderFromString(
 
 std::optional<TemplateValue> TemplateEngine::resolve(const TemplateValue &ctx, const std::string &keyPath)
 {
-    if (!ctx.isMap()) return std::nullopt;
-
     TemplateValue current = ctx;
+
     std::istringstream ss(keyPath);
     std::string part;
 
     while (std::getline(ss, part, '.')) {
         if (!current.isMap()) return std::nullopt;
-        auto it = current.asMap().find(part);
-        if (it == current.asMap().end()) return std::nullopt;
+        const auto &map = current.asMap();
+
+        auto it = map.find(part);
+        if (it == map.end()) return std::nullopt;
+
         current = it->second;
     }
 
