@@ -13,9 +13,13 @@ namespace fs = std::filesystem;
 
 static void writeFile(const fs::path &path, const std::string &content)
 {
-    std::ofstream file(path);
-    if (file) file << content;
-    std::cout << MSG_OK << "Wrote: " << path << "\n";
+    if (fs::exists(path)) {
+        std::cout << "[!] Skipped (already exists): \"" << path.string() << "\"\n";
+    } else {
+        std::ofstream file(path);
+        if (file) file << content;
+        std::cout << MSG_OK << "Wrote: " << path << "\n";
+    }
 }
 
 static void createDir(const fs::path &path)
@@ -27,12 +31,9 @@ static void createDir(const fs::path &path)
 
 void ProjectScaffolder::createWorkspace(const std::string &name)
 {
-    fs::path root(name);
+    fs::path root = fs::current_path();
 
-    if (fs::exists(root)) {
-        std::cerr << "[-] Directory '" << name << "' already exists.\n";
-        return;
-    }
+    std::cout << "[*] Initializing project in: " << root.string() << "\n";
 
     // Create directories
     createDir(root / "templates");
