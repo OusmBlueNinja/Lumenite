@@ -1,34 +1,97 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <title>{{ title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <style>
         body {
-            font-family: sans-serif;
+            font-family: 'Segoe UI', sans-serif;
+            background: #f4f6f8;
+            color: #222;
             padding: 2rem;
+            max-width: 800px;
+            margin: auto;
         }
 
         h1 {
-            color: #333;
+            color: #4a90e2;
+            font-size: 2rem;
         }
 
-        ul {
-            margin-top: 1rem;
+        h2 {
+            margin-top: 2rem;
+            color: #444;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 0.3rem;
+        }
+
+        .timestamp {
+            font-size: 1.1rem;
+            color: #2d862d;
+            margin: 1rem 0;
+        }
+
+        .message-block {
+            background: #fff;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+
+        ul.user-list {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        ul.user-list li {
+            background: #e9f0fb;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .meta {
+            color: #777;
+            font-size: 0.9rem;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 2rem;
+            color: #4a90e2;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
 <body>
-<h1>{{ message }}</h1>
-<p>Current server time: <strong>{{ timestamp }}</strong></p>
 
-<h2>Sample Users:</h2>
-<ul>
+<div class="message-block">
+    <h1>{{ message }}</h1>
+    <p class="timestamp">🕒 Server Time: <strong>{{ timestamp }}</strong></p>
+    <p>Hello message via filter: <strong>{{ name | greet }}</strong></p>
+</div>
+
+<h2>👥 Sample Users</h2>
+<ul class="user-list">
     {% for user in users %}
-    <li>User #{{ user.id|default("N/A") }} - {{ user.name|default(user) }}</li>
+    <li>
+        ID: <strong>{{ user.id | default("N/A") }}</strong> —
+        Name: <strong>{{ user.name | default("N/A") }}</strong>
+    </li>
     {% endfor %}
 </ul>
 
-<p><a href="/">← Back to Home</a></p>
+<pre>{{ show_example | safe }}</pre>
+
+
+<a href="/">← Back to Home</a>
+
 </body>
 </html>
