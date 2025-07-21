@@ -21,7 +21,7 @@ public:
 
     ~LumeniteApp();
 
-    void loadScript(const std::string &path);
+    int loadScript(const std::string &path);
 
     static int before_request_ref;
     static int after_request_ref;

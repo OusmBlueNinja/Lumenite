@@ -1,34 +1,25 @@
 #include "LumeniteApp.h"
-#include <iostream>
+#include "utils/ProjectScaffolder.h"
 #include <string>
+#include <iostream>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
-void enableAnsiColors()
+int main(const int argc, char *argv[])
 {
-#ifdef _WIN32
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD dwMode = 0;
-    if (hOut != INVALID_HANDLE_VALUE && GetConsoleMode(hOut, &dwMode)) {
-        dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-        SetConsoleMode(hOut, dwMode);
+    std::string scriptPath = "app.lua";
+
+    if (argc >= 3) {
+        if (const std::string flag = argv[1]; flag == "-n" || flag == "--new" || flag == "--init") {
+            ProjectScaffolder::createWorkspace(argv[2]);
+            return 0;
+        }
     }
-#endif
-}
-
-int main(int argc, char *argv[])
-{
-    enableAnsiColors();
-
-    std::string scriptPath = "app.lua"; // default
 
     if (argc >= 2) {
-        scriptPath = argv[1];
+        if (const std::string arg1 = argv[1]; arg1.rfind('-', 0) != 0) {
+            scriptPath = arg1;
+        }
     }
 
     LumeniteApp app;
-    app.loadScript(scriptPath);
-    return 0;
+    return app.loadScript(scriptPath);
 }

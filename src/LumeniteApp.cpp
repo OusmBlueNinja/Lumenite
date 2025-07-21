@@ -7,7 +7,7 @@
 #include <chrono>
 #include <sstream>
 #include <curl/curl.h>
-#include <filesystem> // required for file check
+#include <filesystem>
 #include "ErrorHandler.h"
 
 #include "modules/LumeniteDb.h"
@@ -18,6 +18,23 @@ bool running = false;
 
 int LumeniteApp::before_request_ref = LUA_NOREF;
 int LumeniteApp::after_request_ref = LUA_NOREF;
+
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+void enableAnsiColors()
+{
+#ifdef _WIN32
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD dwMode = 0;
+    if (hOut != INVALID_HANDLE_VALUE && GetConsoleMode(hOut, &dwMode)) {
+        dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+        SetConsoleMode(hOut, dwMode);
+    }
+#endif
+}
 
 
 static size_t WriteCallback(void *contents, const size_t size, size_t nmemb, std::string *output)
@@ -131,6 +148,7 @@ static void json_to_lua(lua_State *L, const Json::Value &val)
 // ————— Constructor / Destructor —————
 LumeniteApp::LumeniteApp()
 {
+    enableAnsiColors();
     L = luaL_newstate();
     luaL_openlibs(L);
     exposeBindings();
@@ -143,22 +161,23 @@ LumeniteApp::~LumeniteApp()
 }
 
 
-void LumeniteApp::loadScript(const std::string &path)
+int LumeniteApp::loadScript(const std::string &path)
 {
     namespace fs = std::filesystem;
 
     if (!fs::exists(path)) {
         ErrorHandler::fileMissing(path);
-        return;
+        return 1;
     }
 
     if (luaL_dofile(L, path.c_str())) {
         ErrorHandler::invalidScript(lua_tostring(L, -1));
-        return;
+        return 2;
     }
 
     if (!running) {
         ErrorHandler::serverNotRunning();
+        return 3;
     }
 }
 

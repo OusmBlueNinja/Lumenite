@@ -49,7 +49,6 @@ private:
     int port;
     lua_State *L;
 
-    static std::string receiveRequest(int clientSocket);
 
     static void sendResponse(int clientSocket, const std::string &out);
 };
