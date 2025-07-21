@@ -577,7 +577,7 @@ int LumeniteApp::lua_register_template_filter(lua_State *L)
     } else {
         return luaL_error(
             L,
-            "[TemplateError.Usage] Usage: app.template_filter(name, function) or app:template_filter(name, function)");
+            "[TemplateError.Usage] Usage: app.template_filter(name, function(input)) or app:template_filter(name, function(input))");
     }
 
     if (!name) {
