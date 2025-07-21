@@ -121,7 +121,6 @@ app:post("/", function(req)
 end)
 
 app:get("/whoami", function(req)
-
     return app.jsonify({ req })
 
 end)

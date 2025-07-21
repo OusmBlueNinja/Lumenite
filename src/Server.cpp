@@ -3,7 +3,7 @@
 
 #include "LumeniteApp.h"
 #include "SessionManager.h"
-
+#include "ErrorHandler.h""
 #include <json/json.h>
 
 #include <iostream>
@@ -27,17 +27,6 @@ typedef SOCKET SocketType;
   #include <unistd.h>
 typedef int SocketType;
 #endif
-
-
-#define BOLD    "\033[1m"
-#define WHITE   "\033[37m"
-#define CYAN    "\033[36m"
-#define MAGENTA "\033[35m"
-#define BLUE    "\033[34m"
-#define GREEN   "\033[32m"
-#define YELLOW  "\033[33m"
-#define RED     "\033[31m"
-#define RESET   "\033[0m"
 
 
 static constexpr auto DEFAULT_CONTENT_TYPE = "text/html";
@@ -439,10 +428,22 @@ void Server::run()
                     for (auto &a: args)
                         lua_pushlstring(L, a.data(), a.size());
 
-                    if (lua_pcall(L, 1 + static_cast<int>(args.size()), 1, 0) != LUA_OK) {
-                        std::cerr << RED "[Lua Error] " << lua_tostring(L, -1) << RESET "\n";
+                    int nargs = 1 + static_cast<int>(args.size());
+
+                    lua_getglobal(L, "debug");
+                    lua_getfield(L, -1, "traceback");
+                    lua_remove(L, -2);
+                    int tracebackIndex = lua_gettop(L) - nargs - 1;
+
+                    lua_insert(L, tracebackIndex);
+
+
+                    if (lua_pcall(L, nargs, 1, tracebackIndex) != LUA_OK) {
+                        std::cout << RED << "[Lua Error] " << lua_tostring(L, -1) << RESET << "\n";
+
                         res.status = 500;
                         res.body = ERROR_MSG_500;
+                        lua_pop(L, 1);
                     } else {
                         try {
                             if (lua_istable(L, -1)) {
@@ -481,6 +482,7 @@ void Server::run()
                             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
                         }
                     }
+                    lua_remove(L, tracebackIndex);
                 } else {
                     res.status = 404;
                     res.body = ERROR_MSG_400;
