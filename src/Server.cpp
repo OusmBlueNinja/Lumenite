@@ -181,6 +181,25 @@ static void push_lua_response(lua_State *L, const HttpResponse &res)
 }
 
 
+std::string urlDecode(const std::string &value)
+{
+    std::ostringstream result;
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (value[i] == '+') {
+            result << ' ';
+        } else if (value[i] == '%' && i + 2 < value.size()) {
+            int hex = 0;
+            std::istringstream(value.substr(i + 1, 2)) >> std::hex >> hex;
+            result << static_cast<char>(hex);
+            i += 2;
+        } else {
+            result << value[i];
+        }
+    }
+    return result.str();
+}
+
+
 void Server::run()
 {
 #ifdef _WIN32
@@ -255,21 +274,29 @@ void Server::run()
             // Body copy
             if (!body.empty()) req.body.assign(body.begin(), body.end());
 
-            // Query parsing
             if (auto qm = req.path.find('?'); qm != std::string::npos) {
                 std::string qs = req.path.substr(qm + 1);
                 req.path.resize(qm);
+
                 size_t p = 0;
                 while ((qm = qs.find('&', p)) != std::string::npos) {
                     auto kv = qs.substr(p, qm - p);
-                    if (auto eq = kv.find('='); eq != std::string::npos)
-                        req.query[kv.substr(0, eq)] = kv.substr(eq + 1);
+                    if (auto eq = kv.find('='); eq != std::string::npos) {
+                        std::string key = urlDecode(kv.substr(0, eq));
+                        std::string value = urlDecode(kv.substr(eq + 1));
+                        req.query[key] = value;
+                    }
                     p = qm + 1;
                 }
+
                 auto kv = qs.substr(p);
-                if (auto eq = kv.find('='); eq != std::string::npos)
-                    req.query[kv.substr(0, eq)] = kv.substr(eq + 1);
+                if (auto eq = kv.find('='); eq != std::string::npos) {
+                    std::string key = urlDecode(kv.substr(0, eq));
+                    std::string value = urlDecode(kv.substr(eq + 1));
+                    req.query[key] = value;
+                }
             }
+
 
             SessionManager::start(req, res);
 
@@ -430,13 +457,19 @@ void Server::run()
             statusColor = GREEN;
         }
 
+        const char *methodColor = nullptr;
+        if (req.method == "GET") methodColor = CYAN;
+        else if (req.method == "POST") methodColor = MAGENTA;
+        else if (req.method == "DELETE") methodColor = RED;
+        else methodColor = WHITE;
+
 
         std::string method = req.method;
 
         std::cout << BOLD << "[" << dateStream.str() << timeStream.str() << "]" << RESET " "
                 << BOLD << WHITE << std::left << std::setw(16) << ip << RESET
                 << statusColor << res.status << RESET " "
-                << CYAN << method << RESET " "
+                << methodColor << method << RESET " "
                 << BLUE << req.path << RESET << "\n";
 
 
@@ -450,7 +483,6 @@ void Server::run()
     close(sock);
 #endif
 }
-
 
 
 void Server::sendResponse(int clientSocket, const std::string &out)

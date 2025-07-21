@@ -80,7 +80,7 @@ app:listen(8080)
 <body>
     <h1>{{ title }}</h1>
     <p>{{ message }}</p>
-    <p><em>Generated at {{ timestamp }}</em></p>
+    <p><em>Viewed at {{ timestamp }}</em></p>
 </body>
 </html>
 )");
