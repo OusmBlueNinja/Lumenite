@@ -82,9 +82,9 @@ target_link_libraries(lumenite PRIVATE
         sqlite3
         OpenSSL::SSL
         OpenSSL::Crypto
-        ws2_32
 )
 
 if (WIN32)
-    target_link_libraries(lumenite PRIVATE iphlpapi)
+    target_link_libraries(lumenite PRIVATE ws2_32 iphlpapi)
 endif ()
+
