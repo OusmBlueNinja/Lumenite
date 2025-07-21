@@ -45,7 +45,7 @@ void ProjectScaffolder::createWorkspace(const std::string &name)
 local safe = require("LumeniteSafe")
 
 app:get("/", function()
-    return app:render_template("index.html", {
+    return app.render_template("index.html", {
         title = "Welcome to Lumenite!",
         message = "This page is rendered using a template.",
         timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC")
