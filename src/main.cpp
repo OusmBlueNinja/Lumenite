@@ -23,11 +23,7 @@ Examples:
 )";
 }
 
-static void printVersion()
-{
-    std::cout << "Lumenite version: " << LUMENITE_RELEASE_VERSION << "\n";
-    std::cout << "Build: " << getLumeniteVersion() << "\n";
-}
+
 
 int main(int argc, char *argv[])
 {
