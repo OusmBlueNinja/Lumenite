@@ -65,6 +65,7 @@ add_executable(lumenite
         src/modules/LumeniteCrypto.cpp src/modules/LumeniteCrypto.h
         src/modules/LumeniteSafe.cpp src/modules/LumeniteSafe.h
         src/utils/ProjectScaffolder.cpp src/utils/ProjectScaffolder.h
+        src/utils/Version.h
 )
 
 target_include_directories(lumenite PRIVATE
