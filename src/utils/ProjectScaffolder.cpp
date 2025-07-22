@@ -37,7 +37,7 @@ void ProjectScaffolder::createWorkspace(const std::string &name)
 
     // Create directories
     createDir(root / "templates");
-    createDir(root / "types");
+    createDir(root / ".lumenite");
     createDir(root / ".vscode");
 
     // app.lua
@@ -86,18 +86,19 @@ app:listen(8080)
 )");
 
     // types/__syntax__.lua
-    writeFile(root / "types" / "__syntax__.lua", R"(---@meta
--- Lumenite IntelliSense file
+    writeFile(root / ".lumenite" / "__syntax__.lua", R"(---@meta
+
+-- This file provides IntelliSense annotations for the Lumenite web framework.
+-- Do not edit manually — it is generated automatically and used by the language server.
 
 ---@class Request
 ---@field method string
 ---@field path string
----@field body string
 ---@field headers table<string, string>
 ---@field query table<string, string|string[]>
 ---@field form table<string, string|string[]>
+---@field body string
 ---@field remote_ip string
-
 
 ---@class Response
 ---@field status integer
@@ -125,47 +126,47 @@ function app:delete(path, handler) end
 
 ---@param key string
 ---@return string
-function app:session_get(key) return "" end
+function app.session_get(key) return "" end
 
 ---@param key string
 ---@param value string
-function app:session_set(key, value) end
-
----@param filename string
----@param context table
----@return string
-function app:render_template(filename, context) return "" end
-
----@param template_string string
----@param context table
----@return string
-function app:render_template_string(template_string, context) return "" end
+function app.session_set(key, value) end
 
 ---@param name string
 ---@param fn fun(input: string): string
 function app:template_filter(name, fn) end
 
+---@param filename string
+---@param context table
+---@return string
+function app.render_template(filename, context) return "" end
+
+---@param template_string string
+---@param context table
+---@return string
+function app.render_template_string(template_string, context) return "" end
+
 ---@param table table
 ---@return Response
-function app:jsonify(table) return {} end
+function app.jsonify(table) return {} end
 
 ---@param json string
 ---@return table
-function app:json(json) return {} end
+function app.json(json) return {} end
 
 ---@param json string
 ---@return table
-function app:from_json(json) return {} end
+function app.from_json(json) return {} end
 
 ---@param fn fun(req: Request): Response|nil
-function app:before_request(fn) end
+function app.before_request(fn) end
 
 ---@param fn fun(req: Request, res: Response): Response|nil
-function app:after_request(fn) end
+function app.after_request(fn) end
 
 ---@param url string
 ---@return table
-function app:http_get(url) return {} end
+function app.http_get(url) return {} end
 
 ---@param port integer
 function app:listen(port) end
@@ -173,6 +174,8 @@ function app:listen(port) end
 ---@type App
 _G.app = app
 return app
+
+
 )");
 
     // .gitignore

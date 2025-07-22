@@ -72,8 +72,8 @@ app:get("/template", function(req)
         show_example = [[
 {% for user in users %}
 <li>
-    ID: <strong>{{ user.id | default(\"N/A\") }}</strong> —
-    Name: <strong>{{ user.name | default(\"N/A\") }}</strong>
+    ID: <strong>{{ user.id | default("N/A") }}</strong> —
+    Name: <strong>{{ user.name | default("N/A") }}</strong>
 </li>
 {% endfor %}
 
