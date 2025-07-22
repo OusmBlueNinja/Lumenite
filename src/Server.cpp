@@ -3,7 +3,7 @@
 
 #include "LumeniteApp.h"
 #include "SessionManager.h"
-#include "ErrorHandler.h""
+#include "ErrorHandler.h"
 #include <json/json.h>
 
 #include <iostream>
@@ -37,8 +37,7 @@ static auto ERROR_MSG_400 = "<h1>404 Not Found</h1>";
 
 
 Server::Server(int port, lua_State *L)
-    : port(port), L(L)
-{
+    : port(port), L(L) {
 }
 
 
@@ -57,8 +56,7 @@ Server::Server(int port, lua_State *L)
 #include <netinet/in.h>
 #include <sys/socket.h>
 #endif
-void printLocalIPs(int port)
-{
+void printLocalIPs(int port) {
     std::vector<std::string> addresses;
 
 #ifdef _WIN32
@@ -104,18 +102,18 @@ void printLocalIPs(int port)
     freeifaddrs(ifaddr);
 #endif
 
-    std::cout << "\033[1;36m *\033[0m Lumenite Server \033[1mrunning at:\033[0m\n";
+    std::cout << BOLD << CYAN << " *" << RESET << " " << BOLD << "Lumenite Server" << RESET << " running at:\n";
 
     for (const auto &ip: addresses) {
-        std::cout << "   ->\033[1;33m http://" << ip << ":" << port << "\033[0m\n";
+        std::cout << "   " << BOLD << "→" << RESET << " "
+                << YELLOW << "http://" << ip << ":" << port << RESET << "\n";
     }
 
-    std::cout << "\033[1;36m *\033[0m Press \033[1mCTRL+C\033[0m to quit\n";
+    std::cout << BOLD << CYAN << " *" << RESET << " Press " << BOLD << "CTRL+C" << RESET << " to quit\n";
 }
 
 
-static void push_lua_request(lua_State *L, const HttpRequest &req)
-{
+static void push_lua_request(lua_State *L, const HttpRequest &req) {
     lua_newtable(L);
 
     lua_pushstring(L, "method");
@@ -182,8 +180,7 @@ static void push_lua_request(lua_State *L, const HttpRequest &req)
     lua_settable(L, -3);
 }
 
-static void push_lua_response(lua_State *L, const HttpResponse &res)
-{
+static void push_lua_response(lua_State *L, const HttpResponse &res) {
     lua_newtable(L);
 
     lua_pushstring(L, "status");
@@ -204,8 +201,7 @@ static void push_lua_response(lua_State *L, const HttpResponse &res)
 }
 
 
-std::string urlDecode(const std::string &value)
-{
+std::string urlDecode(const std::string &value) {
     std::ostringstream result;
     for (size_t i = 0; i < value.size(); ++i) {
         if (value[i] == '+') {
@@ -222,8 +218,7 @@ std::string urlDecode(const std::string &value)
     return result.str();
 }
 
-std::string getHeaderValue(const std::unordered_map<std::string, std::string> &headers, const std::string &key)
-{
+std::string getHeaderValue(const std::unordered_map<std::string, std::string> &headers, const std::string &key) {
     std::string keyLower = key;
     std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
 
@@ -239,8 +234,7 @@ std::string getHeaderValue(const std::unordered_map<std::string, std::string> &h
 }
 
 
-void Server::run()
-{
+void Server::run() {
 #ifdef _WIN32
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
@@ -575,8 +569,7 @@ void Server::run()
 }
 
 
-void Server::sendResponse(int clientSocket, const std::string &out)
-{
+void Server::sendResponse(int clientSocket, const std::string &out) {
     send(clientSocket, out.c_str(), static_cast<int>(out.size()), 0);
 #ifdef _WIN32
     closesocket(clientSocket);
