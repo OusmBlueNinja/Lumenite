@@ -26,6 +26,10 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
 set(BUILD_CURL_EXE OFF CACHE BOOL "Don't build curl executable" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "Don't build tests" FORCE)
 set(HTTP_ONLY ON CACHE BOOL "HTTP only" FORCE)
+set(CURL_USE_LIBIDN2 OFF CACHE INTERNAL "")
+set(CURL_USE_LIBIDN OFF CACHE INTERNAL "")
+set(CURL_USE_WIN32_IDN OFF CACHE INTERNAL "")
+
 FetchContent_MakeAvailable(curl)
 
 # ----------------- sqlite3 (STATIC) -----------------
@@ -66,6 +70,8 @@ add_executable(lumenite
         src/modules/LumeniteSafe.cpp src/modules/LumeniteSafe.h
         src/utils/ProjectScaffolder.cpp src/utils/ProjectScaffolder.h
         src/utils/Version.h
+        src/utils/MimeDetector.cpp
+        src/utils/MimeDetector.h
 )
 
 target_include_directories(lumenite PRIVATE
@@ -81,6 +87,7 @@ target_link_libraries(lumenite PRIVATE
         sqlite3
         OpenSSL::SSL
         OpenSSL::Crypto
+
 )
 
 if (MINGW)
