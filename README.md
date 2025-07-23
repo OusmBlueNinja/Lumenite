@@ -25,16 +25,23 @@ tooling.
 ## Quick Start (Linux)
 
 ```bash
+# Clone the Lumenite repository
 git clone https://dock-it.dev/GigabiteHosting/Lumenite.git
 cd Lumenite
+
+# Build the Lumenite binary
 mkdir build && cd build
 cmake ..
 make
-cd ../
-mkdir Project
-cd Project
-../build/bin/lumenite --init Project
+
+# Scaffold and run your first project
+cd ..
+mkdir Project && cd Project
+../build/bin/lumenite --init .
+
+# Start the server
 ../build/bin/lumenite
+
 ````
 
 ### Prerequisites
