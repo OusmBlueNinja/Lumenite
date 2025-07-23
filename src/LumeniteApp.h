@@ -48,6 +48,8 @@ private:
 
     static int lua_json(lua_State *L);
 
+    static int lua_send_file(lua_State *L);
+
     static int lua_jsonify(lua_State *L);
 
     static int lua_from_json(lua_State *L);

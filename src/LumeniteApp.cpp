@@ -17,6 +17,8 @@
 #include "modules/LumeniteDb.h"
 #include "modules/LumeniteSafe.h"
 
+#include "utils/MimeDetector.h"
+
 
 bool running = false;
 
@@ -333,6 +335,9 @@ void LumeniteApp::exposeBindings()
     lua_pushcfunction(L, lua_http_get);
     lua_setfield(L, -2, "http_get");
 
+    lua_pushcfunction(L, lua_send_file);
+    lua_setfield(L, -2, "send_file");
+
 
     lua_pushcfunction(L, lua_json);
     lua_setfield(L, -2, "json");
@@ -502,6 +507,96 @@ int LumeniteApp::lua_json(lua_State *L)
     }
 
     json_to_lua(L, root);
+    return 1;
+}
+
+
+int LumeniteApp::lua_send_file(lua_State *L)
+{
+    const std::string path = luaL_checkstring(L, 1);
+
+    bool as_attachment = false;
+    std::string download_name;
+    std::string content_type;
+    std::unordered_map<std::string, std::string> extra_headers;
+    int status = 200;
+
+    if (lua_istable(L, 2)) {
+        lua_getfield(L, 2, "as_attachment");
+        if (lua_isboolean(L, -1)) as_attachment = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "download_name");
+        if (lua_isstring(L, -1)) download_name = lua_tostring(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "content_type");
+        if (lua_isstring(L, -1)) content_type = lua_tostring(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "status");
+        if (lua_isinteger(L, -1)) status = static_cast<int>(lua_tointeger(L, -1));
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "headers");
+        if (lua_istable(L, -1)) {
+            lua_pushnil(L);
+            while (lua_next(L, -2)) {
+                if (lua_isstring(L, -2) && lua_isstring(L, -1)) {
+                    extra_headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                }
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1); // pop headers
+    }
+
+    // Read file
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        luaL_error(L, "send_file: File not found: %s", path.c_str());
+        return 0;
+    }
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    std::string body = buffer.str();
+
+    if (content_type.empty()) {
+        content_type = MimeDetector::toString(
+            MimeDetector::detect(reinterpret_cast<const uint8_t *>(body.data()), body.size(), path)
+        );
+    }
+
+    std::string disposition = as_attachment ? "attachment" : "inline";
+    if (!download_name.empty()) {
+        disposition += "; filename=\"" + download_name + "\"";
+    }
+
+    // Build response
+    lua_newtable(L);
+
+    lua_pushinteger(L, status);
+    lua_setfield(L, -2, "status");
+
+    lua_pushstring(L, body.c_str());
+    lua_setfield(L, -2, "body");
+
+    lua_newtable(L);
+    lua_pushstring(L, content_type.c_str());
+    lua_setfield(L, -2, "Content-Type");
+
+    lua_pushstring(L, disposition.c_str());
+    lua_setfield(L, -2, "Content-Disposition");
+
+    // Merge custom headers
+    for (const auto &[key, val]: extra_headers) {
+        lua_pushstring(L, val.c_str());
+        lua_setfield(L, -2, key.c_str());
+    }
+
+    lua_setfield(L, -2, "headers");
+
     return 1;
 }
 
