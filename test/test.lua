@@ -1,32 +1,44 @@
-local db = require("lumenite.db")
+-- app.lua
+local safe = require("lumenite.safe")
 
--- Define a User model
-local User = db.Model({
-    __tablename = "users",
-    id = db.Column("id", db.Integer, { primary_key = true }),
-    name = db.Column("name", db.String),
-    created_at = db.Column("created_at", db.String)
-})
+app:get("/", function(request)
+    return app.render_template("index.html", {
+        title = "Welcome to Lumenite!",
+        message = "This page is rendered using a template.",
+        timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC")
+    })
+end)
 
-db.create_all()
+app.after_request(function(request, response)
+    response.headers["X-Powered-By"] = "Lumenite"
+    return response
+end)
 
-local user = User({
-    id = 1,
-    name = "Dave",
-    created_at = "2024-01-01"
-})
-
-db.session.add(user)
-db.session.commit()
+app:template_filter("safe", function(input)
+    return safe.escape(input)
+end)
 
 
--- Query: get latest 2 users
-local results = User.query.order_by(User.created_at.desc()).limit(2).all()
+app:get("/test-download/<filepath>", function(req, filepath)
+    return app.send_file(filepath, {
+        as_attachment = false,
+        download_name = filepath,
+        content_type = "text/plain",
+        status = 200,
+        headers = {
+            ["X-From-Test"] = "true",
+            ["Cache-Control"] = "no-store"
 
--- db.session.delete(results)
--- db.session.commit()
+        }
+    })
+end)
 
--- Print results
-for i, user in ipairs(results) do
-    print(string.format("[%d] %s (%s)", user.id, user.name, user.created_at))
-end
+
+
+app:get("/test", function()
+    app.abort(501, "This is a test error. It works!")
+    return "<h1>This is a Big Error :(</h1>"
+end)
+
+
+app:listen(8080)

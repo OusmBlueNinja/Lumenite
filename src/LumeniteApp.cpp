@@ -395,28 +395,37 @@ static int builtin_module_loader(lua_State *L)
 {
     const char *mod = luaL_checkstring(L, 1);
 
+    // NightMod is the package manager for Lumenite
+
     if (strcmp(mod, "lumenite.db") == 0) {
-        lua_pushcfunction(L, luaopen_LumeniteDB);
+        printf(GREEN "[NightMod]" RESET " Loaded module: '" YELLOW "lumenite.db" RESET "'\n");
+
+        lua_pushcfunction(L, luaopen_lumenite_db);
         return 1;
     }
 
     if (strcmp(mod, "lumenite.crypto") == 0) {
+        printf(GREEN "[NightMod]" RESET " Loaded module: '" YELLOW "lumenite.crypto" RESET "'\n");
         lua_pushcfunction(L, LumeniteCrypto::luaopen);
         return 1;
     }
 
     if (strcmp(mod, "lumenite.safe") == 0) {
+        printf(GREEN "[NightMod]" RESET " Loaded module: '" YELLOW "lumenite.safe" RESET "'\n");
         lua_pushcfunction(L, LumeniteSafe::luaopen);
         return 1;
     }
 
-    // Try loading from dynamically registered modules
     if (LumeniteModule::load(mod, L)) {
+        printf(GREEN "[NightMod]" RESET " Loaded module: '" YELLOW "%s" RESET "'\n", mod);
         return 1;
     }
 
+    // Invalid module
+    printf(RED "[NightMod]" RESET " Invalid module: '" YELLOW "%s" RESET "'\n", mod);
+
     lua_pushnil(L);
-    lua_pushfstring(L, "[Lumenite] Invalid module '%s'.", mod);
+    lua_pushfstring(L, "[NightMod] Invalid module '%s'.", mod);
     return 2;
 }
 

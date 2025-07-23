@@ -17,8 +17,8 @@ void LumeniteModule::registerModule(std::unique_ptr<LumeniteModule> mod)
 
 int LumeniteModule::load(const char *modname, lua_State *L)
 {
-    if (auto it = registry().find(modname); it != registry().end()) {
+    if (const auto it = registry().find(modname); it != registry().end()) {
         return it->second->open(L);
     }
-    return 0; // Not found
+    return 0;
 }

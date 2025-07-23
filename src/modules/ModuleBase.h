@@ -9,20 +9,22 @@
 #include <functional>
 #include <lua.hpp>
 
-class LumeniteModule {
+class LumeniteModule
+{
 public:
     virtual ~LumeniteModule() = default;
 
     // Return the full module name, e.g. "lumenite.db"
-    virtual const char* name() const = 0;
+    virtual const char *name() const = 0;
 
     // Register function (like luaopen_LumeniteXYZ)
-    virtual int open(lua_State* L) = 0;
+    virtual int open(lua_State *L) = 0;
 
     // Registry system
     static void registerModule(std::unique_ptr<LumeniteModule> mod);
-    static int load(const char* modname, lua_State* L);
+
+    static int load(const char *modname, lua_State *L);
 
 private:
-    static std::unordered_map<std::string, std::unique_ptr<LumeniteModule>>& registry();
+    static std::unordered_map<std::string, std::unique_ptr<LumeniteModule> > &registry();
 };
