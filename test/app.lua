@@ -34,8 +34,8 @@ end)
 
 
 app:get("/test", function()
-    app.abort(501, "Errrrr baby!!")
-    return "asdasd"
+    app.abort(501, "This is a test error. It works!")
+    return "<h1>This is a Big Error :(</h1>"
 end)
 
 
