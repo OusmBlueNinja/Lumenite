@@ -30,6 +30,7 @@ cd Lumenite
 mkdir build && cd build
 cmake ..
 make
+cd ../
 mkdir Project
 cd Project
 ../build/bin/lumenite --init Project
