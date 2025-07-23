@@ -33,4 +33,10 @@ app:get("/test-download", function()
 end)
 
 
+app:get("/test", function()
+    app.abort(501, "Errrrr baby!!")
+    return "asdasd"
+end)
+
+
 app:listen(8080)
