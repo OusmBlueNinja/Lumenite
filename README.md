@@ -22,6 +22,20 @@ tooling.
 
 ## 🚀 Getting Started
 
+## Quick Start (Linux)
+
+```bash
+git clone https://dock-it.dev/GigabiteHosting/Lumenite.git
+cd Lumenite
+mkdir build && cd build
+cmake ..
+make
+mkdir Project
+cd Project
+../build/bin/lumenite --init Project
+../build/bin/lumenite
+````
+
 ### Prerequisites
 
 - CMake 3.16+
