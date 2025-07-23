@@ -86,89 +86,129 @@ app:listen(8080)
 )");
 
     // types/__syntax__.lua
-    writeFile(root / ".lumenite" / "__syntax__.lua", R"(---@meta
+    writeFile(root / ".lumenite" / "__syntax__.lua", R"(
+
+---@meta
 
 -- This file provides IntelliSense annotations for the Lumenite web framework.
 -- Do not edit manually — it is generated automatically and used by the language server.
 
+
+---@alias Headers table<string, string>
+
+---@class SendFileOptions
+---@field as_attachment boolean   @Optional
+---@field download_name string    @Optional
+---@field content_type  string    @Optional
+---@field status        integer   @Optional
+---@field headers       Headers   @Optional
+
+
+
 ---@class Request
----@field method string
----@field path string
----@field headers table<string, string>
----@field query table<string, string|string[]>
----@field form table<string, string|string[]>
----@field body string
----@field remote_ip string
+---@field method string                     -- HTTP method (GET, POST, etc.)
+---@field path string                       -- Request path (e.g. "/api/data")
+---@field headers Headers                   -- All HTTP headers as a key-value table
+---@field query table<string, string|string[]> -- Query parameters (?key=val&key=val2)
+---@field form table<string, string|string[]>  -- POST/PUT form fields
+---@field body string                       -- Raw request body
+---@field remote_ip string                  -- IP address of the client
 
 ---@class Response
----@field status integer
----@field headers table<string, string>
----@field body string
+---@field status integer                    -- HTTP status code (e.g. 200, 404)
+---@field headers Headers                   -- Response headers
+---@field body string                       -- Response body as a string
 
 ---@class App
 local app = {}
 
----@param path string
----@param handler fun(req: Request): string|Response|table
+--- Registers a handler for HTTP GET requests
+--- @param path string                      -- Route path (e.g. "/about")
+--- @param handler fun(req: Request): string|Response|table
 function app:get(path, handler) end
 
----@param path string
----@param handler fun(req: Request): string|Response|table
+--- Registers a handler for HTTP POST requests
+--- @param path string
+--- @param handler fun(req: Request): string|Response|table
 function app:post(path, handler) end
 
----@param path string
----@param handler fun(req: Request): string|Response|table
+--- Registers a handler for HTTP PUT requests
+--- @param path string
+--- @param handler fun(req: Request): string|Response|table
 function app:put(path, handler) end
 
----@param path string
----@param handler fun(req: Request): string|Response|table
+--- Registers a handler for HTTP DELETE requests
+--- @param path string
+--- @param handler fun(req: Request): string|Response|table
 function app:delete(path, handler) end
 
----@param key string
----@return string
+--- Retrieves a session variable by key
+--- @param key string
+--- @return string                          -- Value from the user's session
 function app.session_get(key) return "" end
 
----@param key string
----@param value string
+--- Sets a session variable (persists across requests)
+--- @param key string
+--- @param value string
 function app.session_set(key, value) end
 
----@param name string
----@param fn fun(input: string): string
+--- Registers a custom template filter callable from within templates
+--- @param name string                      -- Name used in templates (e.g. {{ val|upper }})
+--- @param fn fun(input: string): string    -- Filter function (string in → string out)
 function app:template_filter(name, fn) end
 
----@param filename string
----@param context table
----@return string
+--- Renders a template file with context variables
+--- @param filename string                 -- Path to template file (e.g. "index.html")
+--- @param context table                   -- Table of variables to inject
+--- @return string                         -- Rendered HTML
 function app.render_template(filename, context) return "" end
 
----@param template_string string
----@param context table
----@return string
+--- Renders a raw template string with context
+--- @param template_string string
+--- @param context table
+--- @return string
 function app.render_template_string(template_string, context) return "" end
 
----@param table table
----@return Response
+--- Sends a file to the client.
+--- Returns a file as HTTP response with optional headers, download flags, and MIME type detection.
+--- @param path string
+--- @param options? SendFileOptions
+--- @return Response
+function app.send_file(path, options) end
+
+--- Converts a Lua table to a JSON HTTP response
+--- Automatically sets Content-Type and status = 200.
+--- @param table table
+--- @return Response
 function app.jsonify(table) return {} end
 
----@param json string
----@return table
+--- Parses a JSON string into a Lua table
+--- @param json string
+--- @return table
 function app.json(json) return {} end
 
----@param json string
----@return table
+--- Parses a JSON string into a Lua table (alias of `json`)
+--- @param json string
+--- @return table
 function app.from_json(json) return {} end
 
----@param fn fun(req: Request): Response|nil
+--- Registers a function that runs before every request
+--- Used for middleware such as logging, auth checks, etc.
+--- @param fn fun(req: Request): Response|nil
 function app.before_request(fn) end
 
----@param fn fun(req: Request, res: Response): Response|nil
+--- Registers a function that runs after a response is generated
+--- Used to modify response before it is sent to the client.
+--- @param fn fun(req: Request, res: Response): Response|nil
 function app.after_request(fn) end
 
----@param url string
----@return table
+--- Performs an internal HTTP GET request (e.g. to an external API)
+--- @param url string
+--- @return table                          -- Parsed JSON or raw response depending on content
 function app.http_get(url) return {} end
 
----@param port integer
+--- Starts the Lumenite web server on the specified port
+--- @param port integer
 function app:listen(port) end
 
 ---@type App
