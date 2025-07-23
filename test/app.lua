@@ -19,18 +19,21 @@ app:template_filter("safe", function(input)
 end)
 
 
-app:get("/test-download", function()
-    return app.send_file("./adsd.lua", {
+app:get("/test-download/<filepath>", function(req, filepath)
+
+    return app.send_file(filepath, {
         as_attachment = false,
-        download_name = "example-download.txt",
+        download_name = filepath,
         content_type = "text/plain",
         status = 200,
         headers = {
             ["X-From-Test"] = "true",
             ["Cache-Control"] = "no-store"
+
         }
     })
 end)
+
 
 
 app:get("/test", function()
