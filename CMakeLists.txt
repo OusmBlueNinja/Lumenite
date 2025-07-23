@@ -4,21 +4,23 @@ project(Lumenite LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+
 include(FetchContent)
 
-# ----------------- Global Options -----------------
+
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
 
-# ----------------- jsoncpp (STATIC) -----------------
+
 FetchContent_Declare(
         jsoncpp
         GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
         GIT_TAG 1.9.5
 )
+
 set(JSONCPP_WITH_TESTS OFF CACHE BOOL "Disable jsoncpp tests" FORCE)
 FetchContent_MakeAvailable(jsoncpp)
 
-# ----------------- curl (STATIC, NO libidn2) -----------------
+
 set(BUILD_CURL_EXE OFF CACHE BOOL "Don't build curl executable" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "Don't build curl tests" FORCE)
 set(HTTP_ONLY ON CACHE BOOL "HTTP only" FORCE)
@@ -37,7 +39,6 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(curl)
 
 
-# ----------------- sqlite3 (STATIC) -----------------
 FetchContent_Declare(
         sqlite3
         URL https://www.sqlite.org/2024/sqlite-amalgamation-3450100.zip
@@ -47,19 +48,16 @@ FetchContent_MakeAvailable(sqlite3)
 add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
 target_include_directories(sqlite3 PUBLIC ${sqlite3_SOURCE_DIR})
 
-# ----------------- Lua (STATIC) -----------------
 file(GLOB LUA_SRC CONFIGURE_DEPENDS vendor/lua/*.c)
 add_library(lua_static STATIC ${LUA_SRC})
 target_include_directories(lua_static PUBLIC vendor/lua)
 
-# ----------------- OpenSSL (STATIC) -----------------
 if (MINGW)
     set(OPENSSL_ROOT_DIR "C:/msys64/mingw64")
     set(OPENSSL_USE_STATIC_LIBS TRUE)
 endif ()
 find_package(OpenSSL REQUIRED)
 
-# ----------------- Lumenite Executable -----------------
 add_executable(lumenite
         src/main.cpp
         src/LumeniteApp.cpp src/LumeniteApp.h
@@ -92,10 +90,9 @@ target_link_libraries(lumenite PRIVATE
         OpenSSL::Crypto
 )
 
-# ----------------- Static Linker Flags (Windows Only) -----------------
-if (MINGW)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static -pthread")
-endif ()
+# if (MINGW)
+#     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static -pthread")
+# endif ()
 
 if (WIN32)
     target_link_libraries(lumenite PRIVATE ws2_32 iphlpapi)
