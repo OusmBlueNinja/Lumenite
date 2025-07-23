@@ -315,13 +315,22 @@ void handle_lua_error(lua_State *L, HttpResponse &res)
 {
     if (lua_istable(L, -1)) {
         lua_getfield(L, -1, "__kind");
-        bool isAbort = lua_isstring(L, -1) && std::string(lua_tostring(L, -1)) == "__LUMENITE_ABORT__";
+        const bool isAbort = lua_isstring(L, -1) && std::string(lua_tostring(L, -1)) == "__LUMENITE_ABORT__";
         lua_pop(L, 1);
 
         if (isAbort) {
             lua_getfield(L, -1, "status");
             int code = lua_isinteger(L, -1) ? lua_tointeger(L, -1) : 500;
             res.status = code;
+            lua_pop(L, 1);
+
+            // Extract message
+            std::string message{};
+            lua_getfield(L, -1, "message");
+            if (lua_isstring(L, -1)) {
+                message = lua_tostring(L, -1);
+                std::cerr << YELLOW << "[Abort " << code << "] " << message << RESET << "\n";
+            }
             lua_pop(L, 1);
 
             std::ostringstream fallback;
@@ -339,8 +348,9 @@ void handle_lua_error(lua_State *L, HttpResponse &res)
     std::cerr << RED << "[Lua Error] " << lua_tostring(L, -1) << RESET << "\n";
     lua_pop(L, 1);
     res.status = 500;
-    res.body = statusMessages.at(500);
+    res.body = "<h1>" + std::to_string(res.status) + " " + statusMessages.at(res.status) + "</h1>";
     res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+    return;
 }
 
 
@@ -382,7 +392,7 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
     } catch (...) {
         res.status = 500;
-        res.body = statusMessages.at(500);
+        res.body = "<h1>" + std::to_string(res.status) + " " + statusMessages.at(res.status) + "</h1>";
         res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
     }
 }
@@ -594,7 +604,7 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
                     lua_remove(L, tracebackIndex);
                 } else {
                     res.status = 404;
-                    res.body = statusMessages.at(404);
+                    res.body = "<h1>" + std::to_string(res.status) + " " + statusMessages.at(res.status) + "</h1>";
                     res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
                 }
 
@@ -630,7 +640,7 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
             }
         } catch (...) {
             res.status = 500;
-            res.body = statusMessages.at(500);
+            res.body = "<h1>" + std::to_string(res.status) + " " + statusMessages.at(res.status) + "</h1>";
             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
         }
 
