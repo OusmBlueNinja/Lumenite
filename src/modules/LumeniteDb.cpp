@@ -34,9 +34,6 @@ LumeniteDB::DB::~DB()
 }
 
 
-
-
-
 LumeniteDB::DB **LumeniteDB::check(lua_State *L)
 {
     return static_cast<DB **>(luaL_checkudata(L, 1, "LumeniteDB"));
@@ -98,7 +95,7 @@ int LumeniteDB::db_exec(lua_State *L)
 
 int LumeniteDB::db_query(lua_State *L)
 {
-    auto *db = *check(L);
+    const auto *db = *check(L);
     const char *sql = luaL_checkstring(L, 2);
 
     sqlite3_stmt *stmt;
@@ -194,7 +191,6 @@ int LumeniteDB::db_sanitize(lua_State *L)
     lua_pushstring(L, escaped.str().c_str());
     return 1;
 }
-
 
 
 extern "C" int luaopen_LumeniteDB(lua_State *L)

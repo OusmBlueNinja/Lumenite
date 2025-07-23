@@ -7,7 +7,6 @@
 class LumeniteDB
 {
 public:
-    // SQLite wrapper class
     struct DB
     {
         sqlite3 *handle = nullptr;
@@ -22,7 +21,6 @@ public:
         ~DB();
     };
 
-    // Lua-exposed binding entry point
     static DB **check(lua_State *L);
 
     static int db_open(lua_State *L);
@@ -38,5 +36,4 @@ public:
     static int db_sanitize(lua_State *L);
 };
 
-// Lua module entry point — this is what `require("LumeniteDB")` calls
 extern "C" int luaopen_LumeniteDB(lua_State *L);

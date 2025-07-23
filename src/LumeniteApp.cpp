@@ -16,6 +16,7 @@
 #include "modules/LumeniteCrypto.h"
 #include "modules/LumeniteDb.h"
 #include "modules/LumeniteSafe.h"
+#include "modules/ModuleBase.h"
 
 #include "utils/MimeDetector.h"
 
@@ -390,35 +391,35 @@ void LumeniteApp::exposeBindings()
     lua_setglobal(L, "app");
 }
 
-
 static int builtin_module_loader(lua_State *L)
 {
     const char *mod = luaL_checkstring(L, 1);
 
-    if (strcmp(mod, "LumeniteDB") == 0) {
+    if (strcmp(mod, "lumenite.db") == 0) {
         lua_pushcfunction(L, luaopen_LumeniteDB);
         return 1;
     }
 
-    if (strcmp(mod, "LumeniteCrypto") == 0) {
+    if (strcmp(mod, "lumenite.crypto") == 0) {
         lua_pushcfunction(L, LumeniteCrypto::luaopen);
         return 1;
     }
 
-    if (strcmp(mod, "LumeniteSafe") == 0) {
+    if (strcmp(mod, "lumenite.safe") == 0) {
         lua_pushcfunction(L, LumeniteSafe::luaopen);
         return 1;
     }
 
-    //if (strcmp(mod, "test") == 0) {
-    //    lua_pushcfunction(L, luaopen_test);
-    //    return 1;
-    //}
+    // Try loading from dynamically registered modules
+    if (LumeniteModule::load(mod, L)) {
+        return 1;
+    }
 
     lua_pushnil(L);
     lua_pushfstring(L, "[Lumenite] Invalid module '%s'.", mod);
     return 2;
 }
+
 
 // ------------------------
 // Register custom searcher
@@ -441,7 +442,7 @@ void LumeniteApp::injectBuiltins()
 // ————— Route Arg Helper —————
 static bool extract_route_args(lua_State *L, const char *name, std::string &outPath, int &outHandlerIdx)
 {
-    int n = lua_gettop(L);
+    const int n = lua_gettop(L);
     if (n == 2 && lua_isstring(L, 1) && lua_isfunction(L, 2)) {
         outPath = lua_tostring(L, 1);
         outHandlerIdx = 2;

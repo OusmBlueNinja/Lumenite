@@ -73,6 +73,8 @@ add_executable(lumenite
         src/utils/Version.h
         src/utils/MimeDetector.cpp
         src/utils/MimeDetector.h
+        src/modules/ModuleBase.cpp
+        src/modules/ModuleBase.h
 )
 
 target_include_directories(lumenite PRIVATE
