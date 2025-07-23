@@ -20,8 +20,8 @@ end)
 
 
 app:get("/test-download", function()
-    return app.send_file("./app.lua", {
-        as_attachment = true,
+    return app.send_file("./adsd.lua", {
+        as_attachment = false,
         download_name = "example-download.txt",
         content_type = "text/plain",
         status = 200,
