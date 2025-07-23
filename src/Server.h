@@ -45,7 +45,7 @@ class Server
 public:
     Server(int port, lua_State *L);
 
-    void run();
+    [[noreturn]] void run() const;
 
 private:
     int port;

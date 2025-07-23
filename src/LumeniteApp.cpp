@@ -50,6 +50,20 @@ static size_t WriteCallback(void *contents, const size_t size, size_t nmemb, std
     return totalSize;
 }
 
+// Create the abort call to the C++ backend to trigger the server raise
+void raise_http_abort(lua_State *L, const int status) {
+    lua_newtable(L);
+
+    lua_pushinteger(L, status);
+    lua_setfield(L, -2, "status");
+
+    lua_pushliteral(L, "__LUMENITE_ABORT__");
+    lua_setfield(L, -2, "__kind");
+
+    lua_error(L);
+}
+
+
 
 // ————— Recursive Lua→JSON converter —————
 static Json::Value lua_to_json(lua_State *L, int idx)

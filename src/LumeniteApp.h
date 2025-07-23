@@ -13,6 +13,7 @@ extern "C"
 #include "lualib.h"
 }
 
+static void raise_http_abort(lua_State *L, int status);
 
 class LumeniteApp
 {
