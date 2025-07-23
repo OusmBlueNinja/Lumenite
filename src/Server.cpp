@@ -330,12 +330,20 @@ void handle_lua_error(lua_State *L, HttpResponse &res)
             lua_getfield(L, -1, "message");
             if (lua_isstring(L, -1)) {
                 message = lua_tostring(L, -1);
-                const std::string color = getColorForStatus(code);
 
-                std::cerr << BOLD << color << code << RESET
-                        << "  "
-                        << "[Abort] "
-                        << message << "\n";
+                std::time_t now = std::time(nullptr);
+                std::tm *ltm = std::localtime(&now);
+
+                std::ostringstream dateStream, timeStream;
+                dateStream << "\033[90m" << std::put_time(ltm, "%d/%b/%Y") << RESET;
+                timeStream << WHITE << ":" << MAGENTA << std::put_time(ltm, "%H:%M:%S") << RESET;
+
+                auto statusColor = getColorForStatus(code);
+
+                std::cout << BOLD << "[" << dateStream.str() << timeStream.str() << "]" << RESET << " "
+                        << BOLD << RED << std::left << std::setw(16) << "ABORT" << RESET
+                        << statusColor << std::setw(4) << code << RESET << " "
+                        << BOLD << RED << message << RESET << "\n";
             }
             lua_pop(L, 1);
 

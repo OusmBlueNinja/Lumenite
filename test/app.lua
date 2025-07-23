@@ -20,7 +20,6 @@ end)
 
 
 app:get("/test-download/<filepath>", function(req, filepath)
-
     return app.send_file(filepath, {
         as_attachment = false,
         download_name = filepath,
