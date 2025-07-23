@@ -420,9 +420,8 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
 
     printLocalIPs(port);
 
-    bool running = true; // Only here to make compiler warnings stop for "unreachable code"
 
-    while (running) {
+    while (true) {
         sockaddr_in clientAddr{};
         socklen_t len = sizeof(clientAddr);
         int clientSock = accept(sock, reinterpret_cast<sockaddr *>(&clientAddr), &len);
@@ -684,12 +683,12 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
     }
 
 
-#ifdef _WIN32
-    closesocket(sock);
-    WSACleanup();
-#else
-    close(sock);
-#endif
+    // #ifdef _WIN32
+    //     closesocket(sock);
+    //     WSACleanup();
+    // #else
+    //     close(sock);
+    // #endif
 }
 
 
