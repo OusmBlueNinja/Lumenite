@@ -13,6 +13,7 @@ extern "C"
 #include "lualib.h"
 }
 
+static void raise_http_abort(lua_State *L, int status);
 
 class LumeniteApp
 {
@@ -25,6 +26,8 @@ public:
 
     static int before_request_ref;
     static int after_request_ref;
+    static int on_abort_ref;
+
 
 private:
     lua_State *L;
@@ -63,6 +66,8 @@ private:
     static int lua_before_request(lua_State *L);
 
     static int lua_after_request(lua_State *L);
+
+    static int lua_abort(lua_State *L);
 
     static int lua_listen(lua_State *L);
 };

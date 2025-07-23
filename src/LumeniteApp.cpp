@@ -24,6 +24,7 @@ bool running = false;
 
 int LumeniteApp::before_request_ref = LUA_NOREF;
 int LumeniteApp::after_request_ref = LUA_NOREF;
+int LumeniteApp::on_abort_ref = LUA_NOREF;
 
 
 #ifdef _WIN32
@@ -48,6 +49,25 @@ static size_t WriteCallback(void *contents, const size_t size, size_t nmemb, std
     const size_t totalSize = size * nmemb;
     output->append(static_cast<char *>(contents), totalSize);
     return totalSize;
+}
+
+// Create the abort call to the C++ backend to trigger the server raise
+void raise_http_abort(lua_State *L, int status, const std::string &message = "")
+{
+    lua_newtable(L);
+
+    lua_pushinteger(L, status);
+    lua_setfield(L, -2, "status");
+
+    if (!message.empty()) {
+        lua_pushlstring(L, message.c_str(), message.size());
+        lua_setfield(L, -2, "message");
+    }
+
+    lua_pushliteral(L, "__LUMENITE_ABORT__");
+    lua_setfield(L, -2, "__kind");
+
+    lua_error(L);
 }
 
 
@@ -360,6 +380,9 @@ void LumeniteApp::exposeBindings()
     lua_pushcfunction(L, lua_after_request);
     lua_setfield(L, -2, "after_request");
 
+    lua_pushcfunction(L, lua_abort);
+    lua_setfield(L, -2, "abort");
+
 
     lua_pushcfunction(L, lua_listen);
     lua_setfield(L, -2, "listen");
@@ -432,6 +455,27 @@ static bool extract_route_args(lua_State *L, const char *name, std::string &outP
     luaL_error(L, "%s(path, handler) or %s:path(handler) expected", name, name);
     return false;
 }
+
+
+int LumeniteApp::lua_abort(lua_State *L)
+{
+    const lua_Integer status = luaL_checkinteger(L, 1);
+
+    if (status < 100 || status > 599) {
+        return luaL_error(L, "abort(status): status code must be between 100 and 599");
+    }
+
+    std::string message;
+    if (lua_gettop(L) >= 2 && lua_isstring(L, 2)) {
+        size_t len;
+        const char *msg = lua_tolstring(L, 2, &len);
+        message.assign(msg, len);
+    }
+
+    raise_http_abort(L, static_cast<int>(status), message);
+    return 0;
+}
+
 
 // ————— Route Handlers —————
 int LumeniteApp::lua_route_get(lua_State *L)
@@ -551,9 +595,10 @@ int LumeniteApp::lua_send_file(lua_State *L)
         lua_pop(L, 1); // pop headers
     }
 
-    // Read file
+    // Read a file
     std::ifstream file(path, std::ios::binary);
     if (!file) {
+        raise_http_abort(L, 404, "File not found: " + path);
         luaL_error(L, "send_file: File not found: %s", path.c_str());
         return 0;
     }
