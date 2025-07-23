@@ -1,30 +1,32 @@
 #include "Server.h"
 #include "Router.h"
-
 #include "LumeniteApp.h"
 #include "SessionManager.h"
 #include "ErrorHandler.h"
+
 #include <json/json.h>
 
 #include <iostream>
 #include <iomanip>
-#include <vector>
 #include <sstream>
-#include <ctime>
+#include <vector>
+#include <string>
 #include <cstring>
+#include <ctime>
 
 #ifdef _WIN32
-
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <iphlpapi.h>
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "iphlpapi.lib")
 typedef SOCKET SocketType;
-
 #else
-  #include <sys/socket.h>
-  #include <netinet/in.h>
-  #include <arpa/inet.h>
-  #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <ifaddrs.h>
 typedef int SocketType;
 #endif
 
@@ -106,6 +108,20 @@ static const std::unordered_map<int, std::string> statusMessages = {
     {511, "Network Authentication Required"},
 };
 
+std::string getColorForStatus(int code)
+{
+    if (code >= 100 && code < 200) return MAGENTA; // Informational
+    if (code >= 200 && code < 300) return GREEN; // Success
+    if (code >= 300 && code < 400) return CYAN; // Redirection
+    if (code == 400) return BOLD YELLOW; // Bad Request
+    if (code == 401 || code == 403) return BOLD MAGENTA; // Unauthorized / Forbidden
+    if (code == 404) return BOLD BLUE; // Not Found
+    if (code >= 400 && code < 500) return YELLOW; // Other Client Errors
+    if (code == 500) return BOLD RED; // Internal Server Error
+    if (code >= 500 && code < 600) return RED; // Other Server Errors
+    return RESET; // Unknown or custom
+}
+
 
 Server::Server(int port, lua_State *L)
     : port(port), L(L)
@@ -113,21 +129,6 @@ Server::Server(int port, lua_State *L)
 }
 
 
-#include <iostream>
-#include <string>
-#include <vector>
-
-#ifdef _WIN32
-#include <winsock2.h>
-#include <iphlpapi.h>
-#pragma comment(lib, "iphlpapi.lib")
-
-#else
-#include <ifaddrs.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#endif
 void printLocalIPs(int port)
 {
     std::vector<std::string> addresses;
@@ -297,11 +298,11 @@ std::string urlDecode(const std::string &value)
 std::string getHeaderValue(const std::unordered_map<std::string, std::string> &headers, const std::string &key)
 {
     std::string keyLower = key;
-    std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
+    std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), tolower);
 
     for (const auto &[k, v]: headers) {
         std::string headerKey = k;
-        std::transform(headerKey.begin(), headerKey.end(), headerKey.begin(), ::tolower);
+        std::transform(headerKey.begin(), headerKey.end(), headerKey.begin(), tolower);
         if (headerKey == keyLower) {
             return v;
         }
@@ -320,7 +321,7 @@ void handle_lua_error(lua_State *L, HttpResponse &res)
 
         if (isAbort) {
             lua_getfield(L, -1, "status");
-            int code = lua_isinteger(L, -1) ? lua_tointeger(L, -1) : 500;
+            const int code = lua_isinteger(L, -1) ? lua_tointeger(L, -1) : 500;
             res.status = code;
             lua_pop(L, 1);
 
@@ -329,7 +330,12 @@ void handle_lua_error(lua_State *L, HttpResponse &res)
             lua_getfield(L, -1, "message");
             if (lua_isstring(L, -1)) {
                 message = lua_tostring(L, -1);
-                std::cerr << YELLOW << "[Abort " << code << "] " << message << RESET << "\n";
+                const std::string color = getColorForStatus(code);
+
+                std::cerr << BOLD << color << code << RESET
+                        << "  "
+                        << "[Abort] "
+                        << message << "\n";
             }
             lua_pop(L, 1);
 
@@ -350,7 +356,6 @@ void handle_lua_error(lua_State *L, HttpResponse &res)
     res.status = 500;
     res.body = "<h1>" + std::to_string(res.status) + " " + statusMessages.at(res.status) + "</h1>";
     res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
-    return;
 }
 
 
@@ -415,7 +420,9 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
 
     printLocalIPs(port);
 
-    while (true) {
+    bool running = true; // Only here to make compiler warnings stop for "unreachable code"
+
+    while (running) {
         sockaddr_in clientAddr{};
         socklen_t len = sizeof(clientAddr);
         int clientSock = accept(sock, reinterpret_cast<sockaddr *>(&clientAddr), &len);
@@ -654,17 +661,8 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
         dateStream << "\033[90m" << std::put_time(ltm, "%d/%b/%Y") << RESET;
         timeStream << WHITE << ":" << MAGENTA << std::put_time(ltm, "%H:%M:%S") << RESET;
 
-        auto statusColor = WHITE;
+        auto statusColor = getColorForStatus(res.status);
 
-        if (res.status >= 500) {
-            statusColor = RED;
-        } else if (res.status >= 400) {
-            statusColor = YELLOW;
-        } else if (res.status >= 300) {
-            statusColor = CYAN;
-        } else if (res.status >= 200) {
-            statusColor = GREEN;
-        }
 
         const char *methodColor = nullptr;
         if (req.method == "GET") methodColor = CYAN;
@@ -684,6 +682,7 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
 
         lua_settop(L, 0);
     }
+
 
 #ifdef _WIN32
     closesocket(sock);
