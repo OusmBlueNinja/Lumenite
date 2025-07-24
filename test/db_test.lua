@@ -1,5 +1,5 @@
 local db = require("lumenite.db")
-db.open("unit_test.db")
+
 -- Define model
 local User = db.Model({
     __tablename = "users",

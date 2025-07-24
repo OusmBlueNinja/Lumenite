@@ -33,6 +33,16 @@ public:
         std::vector<Row> pending_inserts;
     };
 
+    struct Query
+    {
+        std::string tablename;
+        std::string order_by;
+        int limit = -1;
+
+        std::vector<std::map<std::string, std::string> > execute();
+    };
+
+
     struct DB
     {
         sqlite3 *handle = nullptr;
