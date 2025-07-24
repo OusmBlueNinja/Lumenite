@@ -53,70 +53,9 @@ static void bind_filter_args(lua_State *L, sqlite3_stmt *stmt)
 }
 
 
-static void create_model_table(lua_State *L, const LumeniteDB::Model &model)
-{
-    lua_newtable(L); // metatable
-    lua_pushstring(L, model.tablename.c_str());
-    lua_setfield(L, -2, "__model");
-    lua_pushvalue(L, -1); // __index = metatable
-    lua_setfield(L, -2, "__index");
-    int metatableRef = lua_gettop(L);
-
-    lua_newtable(L);
-    int modelTable = lua_gettop(L);
-
-    lua_pushvalue(L, metatableRef); // upvalue = instance metatable
-    lua_pushcclosure(L, [](lua_State *L) -> int
-    {
-        luaL_checktype(L, 1, LUA_TTABLE);
-        lua_newtable(L);
-        int instanceIndex = lua_gettop(L);
-
-        lua_pushnil(L);
-        while (lua_next(L, 1)) {
-            lua_pushvalue(L, -2); // key
-            lua_pushvalue(L, -2); // value
-            lua_settable(L, instanceIndex);
-            lua_pop(L, 1);
-        }
-
-        lua_pushvalue(L, lua_upvalueindex(1));
-        lua_setmetatable(L, -2);
-        return 1;
-    }, 1);
-    lua_setfield(L, modelTable, "new");
-
-    for (const auto &col: model.columns) {
-        lua_newtable(L); // column table
-
-        lua_pushstring(L, col.name.c_str());
-        lua_pushcclosure(L, [](lua_State *L) -> int
-        {
-            const char *colname = lua_tostring(L, lua_upvalueindex(1));
-            lua_pushfstring(L, "%s DESC", colname);
-            return 1;
-        }, 1);
-        lua_setfield(L, -2, "desc");
-
-        lua_pushstring(L, col.name.c_str());
-        lua_pushcclosure(L, [](lua_State *L) -> int
-        {
-            const char *colname = lua_tostring(L, lua_upvalueindex(1));
-            lua_pushfstring(L, "%s ASC", colname);
-            return 1;
-        }, 1);
-        lua_setfield(L, -2, "asc");
-
-        lua_setfield(L, modelTable, col.name.c_str());
-    }
-
-    lua_newtable(L);
-    register_default_query_methods(L, model.tablename);
-    lua_setfield(L, modelTable, "query");
-}
-
-
-static void register_default_query_methods(lua_State *L, const std::string &tablename)
+static void register_default_query_methods(lua_State *L,
+                                           int queryTableIndex,
+                                           const std::string &tablename)
 {
     // query.order_by(expr)
     lua_pushcfunction(L, [](lua_State *L) -> int {
@@ -127,7 +66,7 @@ static void register_default_query_methods(lua_State *L, const std::string &tabl
                       lua_pushvalue(L, 1);
                       return 1;
                       });
-    lua_setfield(L, -2, "order_by");
+    lua_setfield(L, queryTableIndex, "order_by");
 
     // query.limit(n)
     lua_pushcfunction(L, [](lua_State *L) -> int {
@@ -138,200 +77,241 @@ static void register_default_query_methods(lua_State *L, const std::string &tabl
                       lua_pushvalue(L, 1);
                       return 1;
                       });
-    lua_setfield(L, -2, "limit");
+    lua_setfield(L, queryTableIndex, "limit");
 
-    // query.filter_by({ name = "Alice", id = 5 })
+    // query.filter_by({ k = v, … })
     lua_pushcfunction(L, [](lua_State *L) -> int {
-                      luaL_checktype(L, 1, LUA_TTABLE); // query object
-                      luaL_checktype(L, 2, LUA_TTABLE); // key-value filter
+                      luaL_checktype(L, 1, LUA_TTABLE);
+                      luaL_checktype(L, 2, LUA_TTABLE);
 
                       std::stringstream sql;
                       bool first = true;
 
-                      // Clear previous args
-                      lua_newtable(L); // arg list
-                      int argTable = lua_gettop(L);
+                      // build a fresh args list
+                      lua_newtable(L);
+                      int argsTbl = lua_gettop(L);
 
                       lua_pushnil(L);
                       while (lua_next(L, 2)) {
-                      const char *key = lua_tostring(L, -2);
-                      if (!key) continue;
-
+                      const char *k = lua_tostring(L, -2);
                       if (!first) sql << " AND ";
-                      sql << key << " = ?";
+                      sql << k << " = ?";
                       first = false;
 
-                      // Add value to arg list (as string)
                       if (lua_isstring(L, -1) || lua_isnumber(L, -1)) {
                       lua_pushvalue(L, -1);
-                      lua_rawseti(L, argTable, lua_rawlen(L, argTable) + 1);
+                      lua_rawseti(L, argsTbl, lua_rawlen(L, argsTbl) + 1);
                       } else {
                       return luaL_error(L, "filter_by values must be string or number");
                       }
-
                       lua_pop(L, 1);
                       }
 
                       lua_pushstring(L, sql.str().c_str());
                       lua_setfield(L, 1, "__filter_sql");
-
-                      lua_pushvalue(L, argTable);
+                      lua_pushvalue(L, argsTbl);
                       lua_setfield(L, 1, "__filter_args");
 
-                      lua_pushvalue(L, 1); // return query object
+                      lua_pushvalue(L, 1);
                       return 1;
                       });
-    lua_setfield(L, -2, "filter_by");
-
-
-    // query.where = alias for filter
-    lua_getfield(L, -1, "filter");
-    lua_setfield(L, -2, "where");
+    lua_setfield(L, queryTableIndex, "filter_by");
 
     // query.get(id)
     lua_pushstring(L, tablename.c_str());
     lua_pushcclosure(L, [](lua_State *L) -> int
     {
         const char *tablename = lua_tostring(L, lua_upvalueindex(1));
-        std::string sql = "SELECT * FROM " + std::string(tablename) + " WHERE id = ? LIMIT 1;";
-
+        if (!lua_isinteger(L, 1) && !lua_isstring(L, 1))
+            return luaL_error(L, "Expected integer or string ID");
+        std::string sql = std::string("SELECT * FROM ") + tablename + " WHERE id = ? LIMIT 1;";
         sqlite3_stmt *stmt;
-        if (sqlite3_prepare_v2(LumeniteDB::db_instance->handle, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-            return luaL_error(L, "SQLite prepare failed: %s", sqlite3_errmsg(LumeniteDB::db_instance->handle));
-        }
+        if (sqlite3_prepare_v2(LumeniteDB::db_instance->handle,
+                               sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+            return luaL_error(L, "SQLite prepare failed: %s",
+                              sqlite3_errmsg(LumeniteDB::db_instance->handle));
 
-        if (lua_isinteger(L, 2)) {
-            sqlite3_bind_int(stmt, 1, static_cast<int>(lua_tointeger(L, 2)));
-        } else if (lua_isstring(L, 2)) {
-            sqlite3_bind_text(stmt, 1, lua_tostring(L, 2), -1, SQLITE_TRANSIENT);
-        } else {
-            sqlite3_finalize(stmt);
-            return luaL_error(L, "Expected string or integer ID for get()");
-        }
+        if (lua_isinteger(L, 1))
+            sqlite3_bind_int(stmt, 1, int(lua_tointeger(L, 1)));
+        else
+            sqlite3_bind_text(stmt, 1, lua_tostring(L, 1), -1, SQLITE_TRANSIENT);
 
-        int rc = sqlite3_step(stmt);
-        if (rc == SQLITE_ROW) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
             lua_newtable(L);
-            int col_count = sqlite3_column_count(stmt);
-            for (int i = 0; i < col_count; ++i) {
+            for (int i = 0; i < sqlite3_column_count(stmt); ++i) {
                 const char *col = sqlite3_column_name(stmt, i);
-                const char *val = reinterpret_cast<const char *>(sqlite3_column_text(stmt, i));
-                if (val) lua_pushstring(L, val);
+                const unsigned char *txt = sqlite3_column_text(stmt, i);
+                if (txt) lua_pushstring(L, (const char *) txt);
                 else lua_pushnil(L);
                 lua_setfield(L, -2, col);
             }
         } else {
             lua_pushnil(L);
         }
-
         sqlite3_finalize(stmt);
         return 1;
     }, 1);
-    lua_setfield(L, -2, "get");
+    lua_setfield(L, queryTableIndex, "get");
 
     // query.first()
     lua_pushstring(L, tablename.c_str());
     lua_pushcclosure(L, [](lua_State *L) -> int
     {
         const char *tablename = lua_tostring(L, lua_upvalueindex(1));
-        std::string sql = "SELECT * FROM " + std::string(tablename);
-
-        lua_getfield(L, 1, "__filter");
-        if (lua_isstring(L, -1)) {
-            sql += " WHERE " + std::string(lua_tostring(L, -1));
-        }
+        std::string sql = std::string("SELECT * FROM ") + tablename;
+        lua_getfield(L, 1, "__filter_sql");
+        if (lua_isstring(L, -1)) sql += " WHERE " + std::string(lua_tostring(L, -1));
         lua_pop(L, 1);
-
         lua_getfield(L, 1, "__order_by");
-        if (lua_isstring(L, -1)) {
-            sql += " ORDER BY " + std::string(lua_tostring(L, -1));
-        }
+        if (lua_isstring(L, -1)) sql += " ORDER BY " + std::string(lua_tostring(L, -1));
         lua_pop(L, 1);
-
         sql += " LIMIT 1;";
 
         sqlite3_stmt *stmt;
-        if (sqlite3_prepare_v2(LumeniteDB::db_instance->handle, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-            return luaL_error(L, "SQLite error: %s", sqlite3_errmsg(LumeniteDB::db_instance->handle));
-        }
+        if (sqlite3_prepare_v2(LumeniteDB::db_instance->handle,
+                               sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+            return luaL_error(L, "SQLite error: %s",
+                              sqlite3_errmsg(LumeniteDB::db_instance->handle));
 
-        bind_filter_args(L, stmt); // <- bind parameters securely
+        bind_filter_args(L, stmt);
 
-        int rc = sqlite3_step(stmt);
-        if (rc == SQLITE_ROW) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
             lua_newtable(L);
-            int col_count = sqlite3_column_count(stmt);
-            for (int i = 0; i < col_count; ++i) {
+            for (int i = 0; i < sqlite3_column_count(stmt); ++i) {
                 const char *col = sqlite3_column_name(stmt, i);
-                const unsigned char *val = sqlite3_column_text(stmt, i);
-                if (val) lua_pushstring(L, (const char *) val);
+                const unsigned char *txt = sqlite3_column_text(stmt, i);
+                if (txt) lua_pushstring(L, (const char *) txt);
                 else lua_pushnil(L);
                 lua_setfield(L, -2, col);
             }
         } else {
             lua_pushnil(L);
         }
-
         sqlite3_finalize(stmt);
         return 1;
     }, 1);
-    lua_setfield(L, -2, "first");
-
+    lua_setfield(L, queryTableIndex, "first");
 
     // query.all()
     lua_pushstring(L, tablename.c_str());
     lua_pushcclosure(L, [](lua_State *L) -> int
     {
         const char *tablename = lua_tostring(L, lua_upvalueindex(1));
-        std::string sql = "SELECT * FROM " + std::string(tablename);
-
-        lua_getfield(L, 1, "__filter");
-        if (lua_isstring(L, -1)) {
-            sql += " WHERE " + std::string(lua_tostring(L, -1));
-        }
+        std::string sql = std::string("SELECT * FROM ") + tablename;
+        lua_getfield(L, 1, "__filter_sql");
+        if (lua_isstring(L, -1)) sql += " WHERE " + std::string(lua_tostring(L, -1));
         lua_pop(L, 1);
-
         lua_getfield(L, 1, "__order_by");
-        if (lua_isstring(L, -1)) {
-            sql += " ORDER BY " + std::string(lua_tostring(L, -1));
-        }
+        if (lua_isstring(L, -1)) sql += " ORDER BY " + std::string(lua_tostring(L, -1));
         lua_pop(L, 1);
-
         lua_getfield(L, 1, "__limit");
-        if (lua_isinteger(L, -1)) {
-            sql += " LIMIT " + std::to_string(lua_tointeger(L, -1));
-        }
+        if (lua_isinteger(L, -1)) sql += " LIMIT " + std::to_string(lua_tointeger(L, -1));
         lua_pop(L, 1);
-
         sql += ";";
 
         sqlite3_stmt *stmt;
-        if (sqlite3_prepare_v2(LumeniteDB::db_instance->handle, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-            return luaL_error(L, "SQLite error: %s", sqlite3_errmsg(LumeniteDB::db_instance->handle));
-        }
+        if (sqlite3_prepare_v2(LumeniteDB::db_instance->handle,
+                               sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+            return luaL_error(L, "SQLite error: %s",
+                              sqlite3_errmsg(LumeniteDB::db_instance->handle));
 
-        bind_filter_args(L, stmt); // <- secure binding of user input
-
+        bind_filter_args(L, stmt);
         lua_newtable(L);
-        int index = 1;
-
+        int idx = 1;
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             lua_newtable(L);
-            int col_count = sqlite3_column_count(stmt);
-            for (int i = 0; i < col_count; ++i) {
+            for (int i = 0; i < sqlite3_column_count(stmt); ++i) {
                 const char *col = sqlite3_column_name(stmt, i);
-                const unsigned char *val = sqlite3_column_text(stmt, i);
-                if (val) lua_pushstring(L, (const char *) val);
+                const unsigned char *txt = sqlite3_column_text(stmt, i);
+                if (txt) lua_pushstring(L, (const char *) txt);
                 else lua_pushnil(L);
                 lua_setfield(L, -2, col);
             }
-            lua_rawseti(L, -2, index++);
+            lua_rawseti(L, -2, idx++);
         }
-
         sqlite3_finalize(stmt);
         return 1;
     }, 1);
-    lua_setfield(L, -2, "all");
+    lua_setfield(L, queryTableIndex, "all");
+}
+
+
+// helper to implement User.new / User:new
+static int model_new(lua_State *L)
+{
+    // figure out if def‑table is at 1 or 2
+    int defIdx = 1;
+    if (!lua_istable(L, 1) && lua_istable(L, 2)) {
+        defIdx = 2;
+    }
+    luaL_checktype(L, defIdx, LUA_TTABLE);
+
+    // copy def‑table into a fresh instance
+    lua_newtable(L); // ↑ [ ..., instance ]
+    lua_pushnil(L);
+    while (lua_next(L, defIdx) != 0) {
+        // stack: key at -2, value at -1
+        lua_pushvalue(L, -2); // copy key
+        lua_pushvalue(L, -2); // copy value
+        lua_settable(L, -4); // instance[key] = value
+        lua_pop(L, 1); // pop the value, keep key
+    }
+
+    // attach the metatable (name is upvalue #1)
+    const char *mtName = lua_tostring(L, lua_upvalueindex(1));
+    luaL_getmetatable(L, mtName);
+    lua_setmetatable(L, -2);
+
+    return 1; // return the new instance
+}
+
+static void create_model_table(lua_State *L, const LumeniteDB::Model &model)
+{
+    // 1) Build a unique registry metatable for instances
+    std::string mtName = "LumeniteDB.instance." + model.tablename;
+    luaL_newmetatable(L, mtName.c_str()); // ↑ [ mt ]
+    lua_pushstring(L, model.tablename.c_str());
+    lua_setfield(L, -2, "__model"); // pops string
+    lua_pop(L, 1); // pops mt
+
+    // 2) Create the model table itself
+    lua_newtable(L); // ↑ [ model ]
+    int modelIdx = lua_gettop(L);
+
+    // 3) Install User.new  (as both dot- and colon-style)
+    lua_pushstring(L, mtName.c_str()); // upvalue = registry metatable name
+    lua_pushcclosure(L, model_new, 1); // pops upvalue, pushes closure
+    lua_setfield(L, modelIdx, "new"); // pops closure
+
+    // 4) Install each column helper as User.<colname>
+    for (const auto &col: model.columns) {
+        // a) desc()
+        lua_pushstring(L, col.name.c_str()); // upvalue = "colname"
+        lua_pushcclosure(L, [](lua_State *L)-> int
+        {
+            const char *c = lua_tostring(L, lua_upvalueindex(1));
+            lua_pushfstring(L, "%s DESC", c);
+            return 1;
+        }, 1);
+        lua_setfield(L, modelIdx, (col.name + "_desc").c_str());
+
+        // b) asc()
+        lua_pushstring(L, col.name.c_str());
+        lua_pushcclosure(L, [](lua_State *L)-> int
+        {
+            const char *c = lua_tostring(L, lua_upvalueindex(1));
+            lua_pushfstring(L, "%s ASC", c);
+            return 1;
+        }, 1);
+        lua_setfield(L, modelIdx, (col.name + "_asc").c_str());
+    }
+
+    // 5) Install the .query sub‑table
+    lua_newtable(L); // ↑ [ model, queryTbl ]
+    register_default_query_methods(L, lua_gettop(L), model.tablename);
+    lua_setfield(L, modelIdx, "query"); // pops queryTbl
+
+    // leave [ model ] on the stack for luaopen to return
 }
 
 
@@ -420,36 +400,68 @@ int LumeniteDB::db_column(lua_State *L)
 
 int LumeniteDB::db_model(lua_State *L)
 {
-    luaL_checktype(L, 1, LUA_TTABLE);
-    lua_getfield(L, 1, "__tablename");
-    const char *tablename = luaL_checkstring(L, -1);
+    // Figure out where your `def`‑table really is:
+    // • If called as db:Model{…} then stack[1]=db and stack[2]=defTable.
+    // • If called as db.Model{…} then stack[1]=defTable.
+    int defIdx = 1;
+    if (lua_gettop(L) >= 2 && lua_istable(L, 2)) {
+        defIdx = 2;
+    }
+
+    // Now defIdx must be the table holding your fields
+    if (!lua_istable(L, defIdx)) {
+        return luaL_error(L,
+                          "db.Model: expected a definition table, got %s",
+                          lua_typename(L, lua_type(L, defIdx))
+        );
+    }
+
+    // Pull out and validate __tablename
+    lua_getfield(L, defIdx, "__tablename");
+    if (!lua_isstring(L, -1)) {
+        return luaL_error(L,
+                          "db.Model: missing or invalid '__tablename' field"
+        );
+    }
+    const char *tablename = lua_tostring(L, -1);
     lua_pop(L, 1);
 
+    // Build your C++ Model struct
     Model model;
     model.tablename = tablename;
 
+    // Iterate every key/value in the def‑table
     lua_pushnil(L);
-    while (lua_next(L, 1)) {
-        if (lua_istable(L, -1)) {
-            Column col;
-            lua_getfield(L, -1, "name");
-            col.name = lua_tostring(L, -1);
-            lua_pop(L, 1);
-            lua_getfield(L, -1, "type");
-            col.type = lua_tostring(L, -1);
-            lua_pop(L, 1);
-            lua_getfield(L, -1, "primary_key");
-            col.primary_key = lua_toboolean(L, -1);
-            lua_pop(L, 1);
-            model.columns.push_back(col);
+    while (lua_next(L, defIdx) != 0) {
+        // key at -2, value at -1
+        if (lua_type(L, -2) == LUA_TSTRING) {
+            const char *key = lua_tostring(L, -2);
+            if (strcmp(key, "__tablename") != 0 && lua_istable(L, -1)) {
+                Column col;
+                // name
+                lua_getfield(L, -1, "name");
+                col.name = luaL_checkstring(L, -1);
+                lua_pop(L, 1);
+                // type
+                lua_getfield(L, -1, "type");
+                col.type = luaL_checkstring(L, -1);
+                lua_pop(L, 1);
+                // primary_key
+                lua_getfield(L, -1, "primary_key");
+                col.primary_key = lua_toboolean(L, -1);
+                lua_pop(L, 1);
+
+                model.columns.push_back(col);
+            }
         }
-        lua_pop(L, 1);
+        lua_pop(L, 1); // pop the value, keep the key for next()
     }
 
-    models[tablename] = model;
-
-    // Generate the model table and return
+    // Store and hand off to your factory
+    models[model.tablename] = model;
     create_model_table(L, model);
+
+    // Stack now has exactly 1 return: the new model table
     return 1;
 }
 

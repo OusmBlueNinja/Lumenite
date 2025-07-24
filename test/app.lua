@@ -1,7 +1,12 @@
 local db = require("lumenite.db")
+local debug = require("debug_lua")
+
 db.open("unit_test.db")
+
+--debug.print_table(db)
+
 -- Define model
-local User = db.Model({
+local User = db:Model({
     __tablename = "users",
     id = db.Column("id", "INTEGER", { primary_key = true }),
     name = db.Column("name", "TEXT"),
@@ -9,13 +14,23 @@ local User = db.Model({
     created_at = db.Column("created_at", "TEXT")
 })
 
+
+
+
+
 -- Create table
 db.create_all()
 
+
+--debug.print_table(User)
+
 -- Insert test data
-local u1 = User.new({ id = 1, name = "Alice", age = 30, created_at = "2025-01-01" })
-local u2 = User.new({ id = 2, name = "Bob", age = 25, created_at = "2025-01-02" })
-local u3 = User.new({ id = 3, name = "Charlie", age = 28, created_at = "2025-01-03" })
+local u1 = User.new({ name = "Alice", age = 30, created_at = "2025-01-01" })
+local u2 = User.new({ name = "Bob", age = 25, created_at = "2025-01-02" })
+local u3 = User.new({ name = "Charlie", age = 28, created_at = "2025-01-03" })
+
+debug.print_table(u1)
+
 
 db.session_add(u1)
 db.session_add(u2)
