@@ -425,7 +425,7 @@ static int builtin_module_loader(lua_State *L)
     printf(RED "[NightMod]" RESET " Invalid module: '" YELLOW "%s" RESET "'\n", mod);
 
     lua_pushnil(L);
-    lua_pushfstring(L, "[NightMod] Invalid module '%s'.", mod);
+    lua_pushfstring(L, "[NightMod] No Module named '%s'. (Searching Lua Paths)", mod);
     return 2;
 }
 
@@ -462,7 +462,7 @@ static bool extract_route_args(lua_State *L, const char *name, std::string &outP
         outHandlerIdx = 3;
         return true;
     }
-    luaL_error(L, "%s(path, handler) or %s:path(handler) expected", name, name);
+    luaL_error(L, "%s(path, handler) expected", name);
     return false;
 }
 
