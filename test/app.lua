@@ -6,12 +6,20 @@ db.open("unit_test.db")
 debug.print_table(db)
 
 -- Define model
-local User = db:Model({
+local User = db.Model({
     __tablename = "users",
     id = db.Column("id", "INTEGER", { primary_key = true }),
     name = db.Column("name", "TEXT"),
     age = db.Column("age", "INTEGER"),
     created_at = db.Column("created_at", "TEXT")
+})
+
+local File = db.Model({
+    __tablename = "files",
+    id = db.Column("id", "INTEGER", { primary_key = true }),
+    filename = db.Column("filename", "TEXT"),
+    path = db.Column("path", "TEXT")
+
 })
 
 
