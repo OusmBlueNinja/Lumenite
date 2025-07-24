@@ -3,7 +3,7 @@ local debug = require("debug_lua")
 
 db.open("unit_test.db")
 
---debug.print_table(db)
+debug.print_table(db)
 
 -- Define model
 local User = db:Model({
@@ -22,14 +22,19 @@ local User = db:Model({
 db.create_all()
 
 
---debug.print_table(User)
+debug.print_table(User)
+
+local Alice = { name = "Alice", age = 30, created_at = "2025-01-01" }
+debug.print_table(Alice)
 
 -- Insert test data
-local u1 = User.new({ name = "Alice", age = 30, created_at = "2025-01-01" })
+local u1 = User.new(Alice)
 local u2 = User.new({ name = "Bob", age = 25, created_at = "2025-01-02" })
 local u3 = User.new({ name = "Charlie", age = 28, created_at = "2025-01-03" })
 
 debug.print_table(u1)
+
+
 
 
 db.session_add(u1)
