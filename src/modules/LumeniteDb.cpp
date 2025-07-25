@@ -580,7 +580,7 @@ extern "C" int luaopen_lumenite_db(lua_State *L)
     std::cout << YELLOW << "[~] Notice  : " << RESET
             << "The module " << BOLD << "'lumenite.db'" << RESET << " is currently in " << BOLD << "alpha" << RESET <<
             ".\n"
-            << "             Use with caution — it may be incomplete or unstable.\n";
+            << "             Use with caution - it may be incomplete or unstable.\n";
 
 
     luaL_newmetatable(L, "LumeniteDB.DB");
