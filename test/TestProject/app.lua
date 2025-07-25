@@ -16,11 +16,11 @@
    This file is the first thing run by the Lumenite engine.
 --]]
 
+
+require("app.models")
 require("app.filters")
 require("app.middleware")
 require("app.routes")
-require("app.models")
 
 
 app:listen(8080)
-
