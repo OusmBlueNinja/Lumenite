@@ -3,7 +3,7 @@
 #include <iostream>
 #include <cstdio>
 
-#define LUMENITE_RELEASE_VERSION "2025.3-dev"
+#define LUMENITE_RELEASE_VERSION "2025.4-dev"
 #define LUMENITE_BUILD_DATE __DATE__  // "Jul 22 2025"
 #define LUMENITE_BUILD_TIME __TIME__  // "19:03:04"
 
