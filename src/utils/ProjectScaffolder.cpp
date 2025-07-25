@@ -2,74 +2,220 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-
+#include <iomanip>
+#include "Version.h"
 namespace fs = std::filesystem;
 
-#define COLOR_RESET   "\033[0m"
-#define COLOR_GREEN   "\033[32m"
-#define COLOR_YELLOW  "\033[33m"
-#define COLOR_RED     "\033[31m"
-#define COLOR_BLUE    "\033[34m"
-#define COLOR_CYAN    "\033[36m"
-#define COLOR_BOLD    "\033[1m"
+// Color codes
+#define RESET     "\033[0m"
+#define BOLD      "\033[1m"
+#define DIM       "\033[2m"
+#define GREEN     "\033[32m"
+#define BLUE      "\033[34m"
+#define CYAN      "\033[36m"
+#define MAGENTA   "\033[35m"
+#define YELLOW    "\033[33m"
+#define RED       "\033[31m"
+#define GRAY      "\033[38;5;240m"
+#define PURPLE    "\033[38;5;99m"
+#define LBLUE     "\033[38;5;81m"
+#define LGREEN    "\033[38;5;120m"
+#define MOON1     "\033[38;5;141m"
+#define MOON2     "\033[38;5;135m"
+#define MOON4     "\033[38;5;63m"
+#define MOON5     "\033[38;5;111m"
+#define MOON6     "\033[38;5;250m"
 
-void ProjectScaffolder::log(const std::string &message, const std::string &prefix)
+std::string ProjectScaffolder::colorizePath(const std::string &pathStr, const std::string &projectName)
 {
-    std::string color = COLOR_GREEN;
+    fs::path path(pathStr);
+    std::ostringstream out;
+    const std::string sep = "/";
 
-    if (prefix == "[!] ")
-        color = COLOR_YELLOW;
-    else if (prefix == "[x] ")
-        color = COLOR_RED;
-    else if (prefix == "[*] ")
-        color = COLOR_CYAN;
+    fs::path current;
+    bool first = true;
 
-    std::cout << color << prefix << COLOR_RESET << message << '\n';
+    for (const auto &part: path) {
+        std::string partStr = part.string();
+        current /= part;
+        fs::path absolute = rootPath / current;
+
+        if (!first)
+            out << sep;
+        else
+            first = false;
+
+        // Decide color based on path type
+        if (partStr == projectName) {
+            out << CYAN << BOLD << partStr << RESET;
+        } else if (fs::exists(absolute) && fs::is_directory(absolute)) {
+            out << LBLUE << partStr << RESET; // folder
+        } else {
+            out << LGREEN << partStr << RESET; // file
+        }
+    }
+
+    return out.str();
 }
 
 
-void ProjectScaffolder::createDir(const fs::path &path)
+void ProjectScaffolder::log(const std::string &action, const std::string &text)
 {
-    fs::create_directories(path);
-    log("Created: " + path.string());
-}
+    std::string prefix = "[+] ";
+    std::string color;
 
-void ProjectScaffolder::writeFile(const fs::path &path, const std::string &content)
-{
-    if (fs::exists(path)) {
-        log("Skipped (already exists): \"" + path.string() + "\"", "[!] ");
+    if (action == "Created") { color = BOLD GREEN; } else if (action == "Wrote") { color = BOLD BLUE; } else if (
+        action == "Skipped") {
+        color = YELLOW;
+        prefix = "[!] ";
+    } else if (action == "Warning") {
+        color = YELLOW;
+        prefix = "[!] ";
+    } else if (action == "Note") {
+        color = CYAN;
+        prefix = "[~] ";
+    } else if (action == "Error") {
+        color = BOLD RED;
+        prefix = "[x] ";
     } else {
-        std::ofstream file(path);
-        if (file) file << content;
-        log("Wrote: " + path.string());
+        color = RESET;
+    }
+
+    std::ostringstream aligned;
+    aligned << std::left << std::setw(8) << action;
+
+    std::cout << prefix << color << aligned.str() << ":" << RESET << " ";
+
+    // For path-related actions, use colorized path
+    if (action == "Created" || action == "Wrote" || action == "Skipped")
+        std::cout << colorizePath(text, projectName);
+    else
+        std::cout << color << text;
+
+    std::cout << RESET << "\n";
+}
+
+
+void ProjectScaffolder::createDir(const fs::path &relPath)
+{
+    fs::path full = rootPath / relPath;
+
+    if (fs::exists(full)) {
+        if (deleteExisting) {
+            std::error_code ec;
+            fs::remove_all(full, ec);
+            if (!ec) {
+                log("Deleted", relPath.string());
+                fs::create_directories(full);
+                log("Created", relPath.string());
+            } else {
+                log("Error", "Failed to delete directory: " + ec.message());
+            }
+            return;
+        }
+
+        if (!force) {
+            log("Skipped", relPath.string());
+            return;
+        }
+    }
+
+    fs::create_directories(full);
+    log("Created", relPath.string());
+}
+
+void ProjectScaffolder::writeFile(const fs::path &relPath, const std::string &content)
+{
+    fs::path fullPath = rootPath / relPath;
+
+    if (fs::exists(fullPath)) {
+        if (deleteExisting) {
+            std::error_code ec;
+            fs::remove(fullPath, ec);
+            if (!ec) {
+                log("Deleted", relPath.string());
+            } else {
+                log("Error", "Failed to delete file: " + ec.message());
+                return;
+            }
+        } else if (!force) {
+            log("Skipped", relPath.string());
+            return;
+        }
+    }
+
+    std::ofstream file(fullPath);
+    if (file) {
+        file << content;
+        log("Wrote", relPath.string());
     }
 }
 
-void ProjectScaffolder::createWorkspace(const std::string &name)
-{
-    fs::path root = fs::current_path() / name;
 
-    if (fs::exists(root)) {
-        log("Error: directory already exists: " + root.string(), "[x] ");
-        return;
+void ProjectScaffolder::createWorkspace(const std::string &name, const std::vector<std::string> &args)
+{
+    projectName = name;
+    rootPath = fs::current_path() / name;
+
+
+    for (const auto &arg: args) {
+        if (arg == "--force") force = true;
+        if (arg == "--delete") deleteExisting = true;
     }
 
-    fs::create_directories(root);
-    log("Initializing Lumenite project in: " + root.string(), "[*] ");
+    if (fs::exists(rootPath)) {
+        if (deleteExisting) {
+            std::error_code ec;
+            fs::remove_all(rootPath, ec);
+            if (ec) {
+                log("Error", "failed to delete: " + ec.message());
 
-    // Main folders
-    createDir(root / "app");
-    createDir(root / "db");
-    createDir(root / "templates");
-    createDir(root / ".lumenite");
-    createDir(root / "log");
-    createDir(root / "vendor");
+                return;
+            } else {
+                log("Deleting", rootPath.filename().string());
+            }
+            fs::create_directories(rootPath);
+        } else if (!force) {
+            log("Error", "directory already exists:  " + rootPath.string());
+            log("Note", "Use '--force' to overwrite files or '--delete' to fully rebuild.");
 
-    // app/app.lua
-    std::string appLua = R"(
--- app/app.lua
-local safe = require("LumeniteSafe")
+            return;
+        } else {
+            log("Warning", " writing into existing directory: " + rootPath.filename().string());
+        }
+    } else {
+        fs::create_directories(rootPath);
+    }
 
+
+    log("Created", name);
+
+    // Banner
+    std::cout << "\n" <<
+            MOON1 << " _                                _ _       \n" <<
+            MOON2 << "| |                              (_) |      \n" <<
+            PURPLE << "| |    _   _ _ __ ___   ___ _ __  _| |_ ___ \n" <<
+            MOON4 << "| |   | | | | '_ ` _ \\ / _ \\ '_ \\| | __/ _ \\\n" <<
+            MOON5 << "| |___| |_| | | | | | |  __/ | | | | ||  __/\n" <<
+            MOON6 << "\\_____/\\__,_|_| |_| |_|\\___|_| |_|_|\\__\\___|\n" <<
+            RESET << std::endl;
+
+    std::cout << BOLD << MOON6 << "A fresh Lumenite project\n\n" << RESET;
+
+    std::cout << CYAN << "[*] Initializing Lumenite project in: " << rootPath.string() << RESET << "\n";
+
+    std::ostringstream config;
+    config << "project_name: " << projectName << "\n";
+    config << "lumenite_version: " LUMENITE_RELEASE_VERSION "\n";
+
+    writeFile("config.luma", config.str());
+
+    // Create main subdirectories
+    createDir("app");
+
+
+    // app/routes.lua
+    std::string routesLua = R"(-- app/routes.lua
 app:get("/", function(request)
     return app.render_template("template.html", {
         title = "Welcome to Lumenite",
@@ -78,29 +224,42 @@ app:get("/", function(request)
         timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC")
     })
 end)
+)";
+    size_t pos = routesLua.find("{{project_name}}");
+    if (pos != std::string::npos) {
+        routesLua.replace(pos, 16, name);
+    }
+    writeFile("app/routes.lua", routesLua);
+
+    // app/filters.lua
+    writeFile("app/filters.lua", R"(-- app/filters.lua
+local safe = require("lumenite.safe")
+
+app:template_filter("safe", function(input)
+    return safe.escape(input)
+end)
+)");
+
+    // app/middleware.lua
+    writeFile("app/middleware.lua", R"(-- app/middleware.lua
 
 app.after_request(function(request, response)
     response.headers["X-Powered-By"] = "Lumenite"
     return response
 end)
+)");
 
-app:template_filter("safe", function(input)
-    return safe.escape(input)
-end)
+    writeFile("app/models.lua", R"(-- app/models.lua
 
-app:listen(8080)
-)";
-
-    size_t pos = appLua.find("{{project_name}}");
-    if (pos != std::string::npos) {
-        appLua.replace(pos, 16, name);
-    }
-
-    writeFile(root / "app" / "app.lua", appLua);
+-- [[
+Sadly, the ORM was harder than i thought it would be... so not yet.
+]] --
+)");
 
 
+    createDir("templates");
     // templates/template.html
-    writeFile(root / "templates" / "template.html", R"(<!DOCTYPE html>
+    writeFile("templates/template.html", R"(<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -115,7 +274,7 @@ app:listen(8080)
     <header>{{ project_name }}</header>
     <main>
         <h2>{{ title }}</h2>
-        {{{ content }}}
+        {{ content }}
     </main>
     <footer>
         <em>Rendered at {{ timestamp }}</em>
@@ -124,10 +283,12 @@ app:listen(8080)
 </html>
 )");
 
+    createDir("db");
 
-    // .lumenite/__syntax__.lua (IntelliSense stub)
-    writeFile(root / ".lumenite" / "__syntax__.lua", R"(
 
+    createDir(".lumenite");
+    // .lumenite/__syntax__.lua (EMPTY)
+    writeFile(".lumenite/__syntax__.lua", R"(
 ---@meta
 
 --[[----------------------------------------------------------------------------
@@ -246,22 +407,58 @@ function app:listen(port) end
 _G.app = app
 
 return app
+    )");
 
 
+    createDir("log");
+    createDir("vendor");
+
+    createDir("plugins");
+    writeFile("plugins/modules.cpl", R"(# Lumenite Plugins
+plugins: []
 )");
 
+
+    // app.lua (entry point)
+    writeFile("app.lua", R"(-- app.lua
+require("app.filters")
+require("app.middleware")
+require("app.routes")
+require("app.models")
+
+app:listen(8080)
+)");
+
+
     // README.md
-    writeFile(root / "README.md",
-              "# " + name +
-              "\n\nMade by [Lumenite](https://github.com/OusmBlueNinja/Lumenite)");
+    writeFile("README.md", "# " + name + "\n\nMade by [Lumenite](https://github.com/OusmBlueNinja/Lumenite)");
 
     // .gitignore
-    writeFile(root / ".gitignore", R"(
+    writeFile(".gitignore", R"(
 *.db
 *.log
 .vscode/
 build/
 )");
 
-    log("Created Lumenite workspace: " + name);
+    createDir(".vscode");
+    writeFile(".vscode/settings.json", R"({
+  "files.associations": {
+    "*.cpl": "yaml",
+    "*.lma": "yaml",
+    "*.payload": "yaml",
+    "*.pyld": "yaml"
+  },
+  "vsicons.associations.folders": [
+    {
+      "icon": "config",
+      "extensions": ["lumenite"],
+      "format": "svg"
+    }
+  ]
+}
+)");
+
+
+    log("Created", "Lumenite workspace: " + name);
 }

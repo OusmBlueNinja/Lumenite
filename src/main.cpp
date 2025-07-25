@@ -39,10 +39,16 @@ int main(int argc, char *argv[])
                 return 1;
             }
 
+            std::string projectName = argv[2];
+            std::vector<std::string> scaffoldArgs;
+            for (int i = 3; i < argc; ++i)
+                scaffoldArgs.emplace_back(argv[i]);
+
             ProjectScaffolder scaffolder;
-            scaffolder.createWorkspace(argv[2]);
+            scaffolder.createWorkspace(projectName, scaffoldArgs);
             return 0;
         }
+
 
         if (arg1 == "-h" || arg1 == "--help") {
             printHelp();

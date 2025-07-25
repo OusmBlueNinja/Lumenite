@@ -391,62 +391,74 @@ void LumeniteApp::exposeBindings()
     lua_setglobal(L, "app");
 }
 
+
 static int builtin_module_loader(lua_State *L)
 {
     const char *mod = luaL_checkstring(L, 1);
+    std::string from;
 
-    // NightMod is the package manager for Lumenite
-
+    // Native C modules
     if (strcmp(mod, "lumenite.db") == 0) {
-        printf(GREEN "[NightMod]" RESET " Loaded module: '" YELLOW "lumenite.db" RESET "'\n");
-
+        from = "builtin";
         lua_pushcfunction(L, luaopen_lumenite_db);
-        return 1;
-    }
-
-    if (strcmp(mod, "lumenite.crypto") == 0) {
-        printf(GREEN "[NightMod]" RESET " Loaded module: '" YELLOW "lumenite.crypto" RESET "'\n");
+    } else if (strcmp(mod, "lumenite.crypto") == 0) {
+        from = "builtin";
         lua_pushcfunction(L, LumeniteCrypto::luaopen);
-        return 1;
-    }
-
-    if (strcmp(mod, "lumenite.safe") == 0) {
-        printf(GREEN "[NightMod]" RESET " Loaded module: '" YELLOW "lumenite.safe" RESET "'\n");
+    } else if (strcmp(mod, "lumenite.safe") == 0) {
+        from = "builtin";
         lua_pushcfunction(L, LumeniteSafe::luaopen);
+    } else if (LumeniteModule::load(mod, L)) {
+        from = "builtin";
+    }
+
+    if (!from.empty()) {
+        printf(GREEN "[" PKG_MNGR_NAME "]" RESET " [%-22s] -> %s\n", from.c_str(), mod);
         return 1;
     }
 
-    if (LumeniteModule::load(mod, L)) {
-        printf(GREEN "[NightMod]" RESET " Loaded module: '" YELLOW "%s" RESET "'\n", mod);
-        return 1;
+    // Fallback: search for Lua script
+    std::string relPath = std::string(mod);
+    std::replace(relPath.begin(), relPath.end(), '.', '/'); // test.file → test/file
+
+    std::vector<std::string> searchPaths = {
+        relPath + ".lua",
+        "plugins/" + relPath + ".lua"
+    };
+
+    for (const auto &path: searchPaths) {
+        std::ifstream file(path);
+        if (file.good()) {
+            if (luaL_loadfile(L, path.c_str()) != LUA_OK) {
+                lua_pushnil(L);
+                lua_insert(L, -2);
+                return 2;
+            }
+
+            printf(GREEN "[" PKG_MNGR_NAME "]" RESET " [%-22s] -> %s\n", path.c_str(), mod);
+            return 1;
+        }
     }
 
-    // Invalid module
-    printf(RED "[NightMod]" RESET " Invalid module: '" YELLOW "%s" RESET "'\n", mod);
-
+    // Not found
     lua_pushnil(L);
-    lua_pushfstring(L, "[NightMod] No Module named '%s'. (Searching Lua Paths)", mod);
+    lua_pushfstring(L, "[" PKG_MNGR_NAME "] No Lua module found for '%s'", mod);
     return 2;
 }
 
 
-// ------------------------
-// Register custom searcher
-// ------------------------
 void LumeniteApp::injectBuiltins()
 {
     lua_getglobal(L, "package");
-    lua_getfield(L, -1, "searchers");
+    lua_newtable(L); // New searchers table
 
+    // Add our own single custom loader
     lua_pushcfunction(L, builtin_module_loader);
-    for (int i = static_cast<int>(lua_rawlen(L, -1)) + 1; i > 1; --i) {
-        lua_rawgeti(L, -1, i - 1);
-        lua_rawseti(L, -2, i);
-    }
-    lua_rawseti(L, -2, 1);
+    lua_rawseti(L, -2, 1); // package.searchers[1] = builtin_module_loader
 
-    lua_pop(L, 2);
+    lua_setfield(L, -2, "searchers"); // package.searchers = {...}
+    lua_pop(L, 1); // pop package
 }
+
 
 // ————— Route Arg Helper —————
 static bool extract_route_args(lua_State *L, const char *name, std::string &outPath, int &outHandlerIdx)

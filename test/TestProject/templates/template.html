@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <style>
+        body { font-family: sans-serif; padding: 2rem; background: #f9f9f9; }
+        header { font-size: 1.5rem; font-weight: bold; color: #333; }
+        footer { margin-top: 2rem; font-size: 0.85rem; color: #777; }
+    </style>
+</head>
+<body>
+    <header>{{ project_name }}</header>
+    <main>
+        <h2>{{ title }}</h2>
+        {{ content }}
+    </main>
+    <footer>
+        <em>Rendered at {{ timestamp }}</em>
+    </footer>
+</body>
+</html>
