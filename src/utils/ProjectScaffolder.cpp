@@ -216,6 +216,25 @@ void ProjectScaffolder::createWorkspace(const std::string &name, const std::vect
 
     // app/routes.lua
     std::string routesLua = R"(-- app/routes.lua
+local crypto = require("lumenite.crypto")
+local models = require("app.models")
+
+--[[
+   Application Routes
+
+   Define your URL endpoints and route handlers here.
+   Routes map incoming requests to specific logic and responses.
+
+   This example defines a simple GET route for the homepage ("/")
+   that renders a template with dynamic values.
+
+   You can define more routes using:
+     app:get(path, handler)
+     app:post(path, handler)
+     app:json(path, handler)
+--]]
+
+
 app:get("/", function(request)
     return app.render_template("template.html", {
         title = "Welcome to Lumenite",
@@ -224,7 +243,9 @@ app:get("/", function(request)
         timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC")
     })
 end)
+
 )";
+
     size_t pos = routesLua.find("{{project_name}}");
     if (pos != std::string::npos) {
         routesLua.replace(pos, 16, name);
@@ -235,25 +256,89 @@ end)
     writeFile("app/filters.lua", R"(-- app/filters.lua
 local safe = require("lumenite.safe")
 
+--[[
+   Template Filters
+
+   This file defines custom filters available in your templates.
+
+   Filters allow you to transform data inside templates:
+     Example usage in template.html:
+       {{ title | upper }}         -- convert title to uppercase
+       {{ content | safe }}        -- mark content as safe HTML
+
+   Defining a filter:
+     app:template_filter("name", function(input)
+         -- do something with input
+         return result
+     end)
+
+   This example defines a 'safe' filter using the Lumenite Safe module,
+   which escapes HTML to prevent XSS vulnerabilities.
+
+   You can add more filters here, like:
+     "truncate", "markdown", "date_format", etc.
+--]]
+
+
+
 app:template_filter("safe", function(input)
     return safe.escape(input)
 end)
+
 )");
 
     // app/middleware.lua
     writeFile("app/middleware.lua", R"(-- app/middleware.lua
+local models = require("app.models")
+
+--[[
+   Middleware configuration for Lumenite.
+   Use this file to register hooks that run before or after each request.
+
+   - app.before_request(fn): Called before every route
+   - app.after_request(fn):  Called after every route
+
+   Example use cases:
+   • Logging
+   • Authentication
+   • Header manipulation
+--]]
+
+app.before_request(function(req)
+    -- Example: log the User-Agent
+    -- print(req.headers["User-Agent"])
+end)
 
 app.after_request(function(request, response)
     response.headers["X-Powered-By"] = "Lumenite"
     return response
 end)
+
+
 )");
 
     writeFile("app/models.lua", R"(-- app/models.lua
+local db = require("lumenite.db")
 
--- [[
-Sadly, the ORM was harder than i thought it would be... so not yet.
-]] --
+--[[
+   Model definitions for your application.
+
+   ⚠️ Note:
+   The ORM layer is still under active development and may be incomplete or unstable.
+   You can define basic table schemas and work with raw queries for now.
+
+   Example:
+   -- User = db.Model {
+   --     __tablename = "users",
+   --     id = db.Column("id", "INTEGER", { primary_key = true }),
+   --     name = db.Column("name", "TEXT"),
+   --     created_at = db.Column("created_at", "TEXT")
+   -- }
+
+   Stay tuned for full ORM capabilities!
+--]]
+
+
 )");
 
 
@@ -261,26 +346,39 @@ Sadly, the ORM was harder than i thought it would be... so not yet.
     // templates/template.html
     writeFile("templates/template.html", R"(<!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>{{ title }}</title>
     <style>
-        body { font-family: sans-serif; padding: 2rem; background: #f9f9f9; }
-        header { font-size: 1.5rem; font-weight: bold; color: #333; }
-        footer { margin-top: 2rem; font-size: 0.85rem; color: #777; }
+      body {
+        font-family: sans-serif;
+        padding: 2rem;
+        background: #f9f9f9;
+      }
+      header {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #333;
+      }
+      footer {
+        margin-top: 2rem;
+        font-size: 0.85rem;
+        color: #777;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <header>{{ project_name }}</header>
     <main>
-        <h2>{{ title }}</h2>
-        {{ content }}
+      <h2>{{ title }}</h2>
+      {{ content }}
     </main>
     <footer>
-        <em>Rendered at {{ timestamp }}</em>
+      <em>Rendered at {{ timestamp }}</em>
     </footer>
-</body>
+  </body>
 </html>
+
 )");
 
     createDir("db");
@@ -411,6 +509,7 @@ return app
 
 
     createDir("log");
+    writeFile("log/latest.log", "Hello, World!");
     createDir("vendor");
 
     createDir("plugins");
@@ -419,14 +518,31 @@ plugins: []
 )");
 
 
-    // app.lua (entry point)
     writeFile("app.lua", R"(-- app.lua
+
+--[[
+   Lumenite Entry Point
+
+   This is your main application bootstrap file.
+   It loads route handlers, middleware, filters, and models.
+
+   Each file in the `app/` folder encapsulates a part of your app:
+     - filters.lua     → defines custom template filters
+     - middleware.lua  → defines pre- and post-request logic
+     - routes.lua      → defines HTTP route handlers
+     - models.lua      → defines database models (ORM)
+
+   You can customize the port or add environment setup here.
+   This file is the first thing run by the Lumenite engine.
+--]]
+
 require("app.filters")
 require("app.middleware")
 require("app.routes")
 require("app.models")
 
 app:listen(8080)
+
 )");
 
 
@@ -445,14 +561,18 @@ build/
     writeFile(".vscode/settings.json", R"({
   "files.associations": {
     "*.cpl": "yaml",
+    "*.luma": "yaml",
     "*.lma": "yaml",
     "*.payload": "yaml",
-    "*.pyld": "yaml"
+    "*.pyld": "yaml",
+    "*.pld": "yaml"
   },
   "vsicons.associations.folders": [
     {
       "icon": "config",
-      "extensions": ["lumenite"],
+      "extensions": [
+        "lumenite"
+      ],
       "format": "svg"
     }
   ]

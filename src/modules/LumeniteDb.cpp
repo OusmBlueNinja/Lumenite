@@ -2,7 +2,7 @@
 #include <sstream>
 #include <iostream>
 #include <cstring>
-
+#include "../ErrorHandler.h"
 // Static variables
 std::map<std::string, LumeniteDB::Model> LumeniteDB::models;
 LumeniteDB::Session LumeniteDB::session;
@@ -577,6 +577,12 @@ int LumeniteDB::db_select_all(lua_State *L)
 
 extern "C" int luaopen_lumenite_db(lua_State *L)
 {
+    std::cout << YELLOW << "[~] Notice  : " << RESET
+            << "This module is currently in " << BOLD << "alpha" << RESET
+            << " and may be unstable or incomplete.\n"
+            << "             Use with caution and expect potential issues." << std::endl;
+
+
     luaL_newmetatable(L, "LumeniteDB.DB");
     lua_pushcfunction(L, LumeniteDB::db_gc);
     lua_setfield(L, -2, "__gc");
