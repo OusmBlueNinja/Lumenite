@@ -1,29 +1,29 @@
 #include "LumeniteApp.h"
 #include "utils/ProjectScaffolder.h"
+#include "utils/Version.h"
+#include "ErrorHandler.h" // for colors
 #include <string>
 #include <iostream>
-#include "utils/Version.h"
 
 static void printHelp()
 {
-    std::cout << R"(Lumenite - Lightweight Lua+HTTP Server
-
+    std::cout << CYAN << R"(
+Lumenite - Lightweight Lua+HTTP Server
+)" << RESET << R"(
 Usage:
-  lumenite             Run app.lua
-  lumenite <script>   Run specified Lua script
-  lumenite -n <name>  Create a new project (alias: --new, --init)
+  lumenite              Run app.lua
+  lumenite <script>     Run specified Lua script
+  lumenite new <name>   Create a new project
 
 Options:
-  -h, --help           Show this help message
-  -v, --version        Print Lumenite version
+  -h, --help            Show this help message
+  -v, --version         Print Lumenite version
 
 Examples:
   lumenite app.lua
-  lumenite -n mysite
-)";
+  lumenite new mysite
+)" << std::endl;
 }
-
-
 
 int main(int argc, char *argv[])
 {
@@ -32,13 +32,15 @@ int main(int argc, char *argv[])
     if (argc >= 2) {
         const std::string arg1 = argv[1];
 
-        if (arg1 == "-n" || arg1 == "--new" || arg1 == "--init") {
+        if (arg1 == "new") {
             if (argc < 3) {
-                std::cerr << "[Error] Project name missing after '" << arg1 << "'\n\n";
+                std::cerr << RED << "[Error] Project name missing after 'new'" << RESET << "\n\n";
                 printHelp();
                 return 1;
             }
-            ProjectScaffolder::createWorkspace(argv[2]);
+
+            ProjectScaffolder scaffolder;
+            scaffolder.createWorkspace(argv[2]);
             return 0;
         }
 
@@ -52,13 +54,14 @@ int main(int argc, char *argv[])
             return 0;
         }
 
-        if (arg1.rfind("-", 0) != 0) {
-            scriptPath = arg1;
-        } else {
-            std::cerr << "[Error] Unknown flag: " << arg1 << "\n\n";
+        if (arg1.starts_with("-")) {
+            std::cerr << RED << "[Error] Unknown flag: " << arg1 << RESET << "\n\n";
             printHelp();
             return 1;
         }
+
+        // Assume it's a script
+        scriptPath = arg1;
     }
 
     LumeniteApp app;

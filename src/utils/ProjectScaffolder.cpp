@@ -1,7 +1,3 @@
-//
-// Created by spenc on 7/21/2025.
-//
-
 #include "ProjectScaffolder.h"
 #include <filesystem>
 #include <fstream>
@@ -9,45 +5,76 @@
 
 namespace fs = std::filesystem;
 
-#define MSG_OK "[+] "
+#define COLOR_RESET   "\033[0m"
+#define COLOR_GREEN   "\033[32m"
+#define COLOR_YELLOW  "\033[33m"
+#define COLOR_RED     "\033[31m"
+#define COLOR_BLUE    "\033[34m"
+#define COLOR_CYAN    "\033[36m"
+#define COLOR_BOLD    "\033[1m"
 
-static void writeFile(const fs::path &path, const std::string &content)
+void ProjectScaffolder::log(const std::string &message, const std::string &prefix)
+{
+    std::string color = COLOR_GREEN;
+
+    if (prefix == "[!] ")
+        color = COLOR_YELLOW;
+    else if (prefix == "[x] ")
+        color = COLOR_RED;
+    else if (prefix == "[*] ")
+        color = COLOR_CYAN;
+
+    std::cout << color << prefix << COLOR_RESET << message << '\n';
+}
+
+
+void ProjectScaffolder::createDir(const fs::path &path)
+{
+    fs::create_directories(path);
+    log("Created: " + path.string());
+}
+
+void ProjectScaffolder::writeFile(const fs::path &path, const std::string &content)
 {
     if (fs::exists(path)) {
-        std::cout << "[!] Skipped (already exists): \"" << path.string() << "\"\n";
+        log("Skipped (already exists): \"" + path.string() + "\"", "[!] ");
     } else {
         std::ofstream file(path);
         if (file) file << content;
-        std::cout << MSG_OK << "Wrote: " << path << "\n";
+        log("Wrote: " + path.string());
     }
-}
-
-static void createDir(const fs::path &path)
-{
-    fs::create_directories(path);
-
-    std::cout << MSG_OK << "Created: " << path << "\n";
 }
 
 void ProjectScaffolder::createWorkspace(const std::string &name)
 {
-    fs::path root = fs::current_path();
+    fs::path root = fs::current_path() / name;
 
-    std::cout << "[*] Initializing project in: " << root.string() << "\n";
+    if (fs::exists(root)) {
+        log("Error: directory already exists: " + root.string(), "[x] ");
+        return;
+    }
 
-    // Create directories
+    fs::create_directories(root);
+    log("Initializing Lumenite project in: " + root.string(), "[*] ");
+
+    // Main folders
+    createDir(root / "app");
+    createDir(root / "db");
     createDir(root / "templates");
     createDir(root / ".lumenite");
-    createDir(root / ".vscode");
+    createDir(root / "log");
+    createDir(root / "vendor");
 
-    // app.lua
-    writeFile(root / "app.lua", R"(-- app.lua
+    // app/app.lua
+    std::string appLua = R"(
+-- app/app.lua
 local safe = require("LumeniteSafe")
 
 app:get("/", function(request)
-    return app.render_template("index.html", {
-        title = "Welcome to Lumenite!",
-        message = "This page is rendered using a template.",
+    return app.render_template("template.html", {
+        title = "Welcome to Lumenite",
+        project_name = "{{project_name}}",
+        content = "<p>This content was injected into the layout.</p>",
         timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC")
     })
 end)
@@ -61,31 +88,44 @@ app:template_filter("safe", function(input)
     return safe.escape(input)
 end)
 
-
 app:listen(8080)
-)");
+)";
 
-    // templates/index.html
-    writeFile(root / "templates" / "index.html", R"(<!DOCTYPE html>
-<html>
+    size_t pos = appLua.find("{{project_name}}");
+    if (pos != std::string::npos) {
+        appLua.replace(pos, 16, name);
+    }
+
+    writeFile(root / "app" / "app.lua", appLua);
+
+
+    // templates/template.html
+    writeFile(root / "templates" / "template.html", R"(<!DOCTYPE html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
     <title>{{ title }}</title>
     <style>
         body { font-family: sans-serif; padding: 2rem; background: #f9f9f9; }
-        h1 { color: #333; }
-        p  { color: #555; }
+        header { font-size: 1.5rem; font-weight: bold; color: #333; }
+        footer { margin-top: 2rem; font-size: 0.85rem; color: #777; }
     </style>
 </head>
 <body>
-    <h1>{{ title }}</h1>
-    <p>{{ message }}</p>
-    <p><em>Viewed at {{ timestamp }}</em></p>
+    <header>{{ project_name }}</header>
+    <main>
+        <h2>{{ title }}</h2>
+        {{{ content }}}
+    </main>
+    <footer>
+        <em>Rendered at {{ timestamp }}</em>
+    </footer>
 </body>
 </html>
 )");
 
-    // types/__syntax__.lua
+
+    // .lumenite/__syntax__.lua (IntelliSense stub)
     writeFile(root / ".lumenite" / "__syntax__.lua", R"(
 
 ---@meta
@@ -208,9 +248,12 @@ _G.app = app
 return app
 
 
-
-
 )");
+
+    // README.md
+    writeFile(root / "README.md",
+              "# " + name +
+              "\n\nMade by [Lumenite](https://github.com/OusmBlueNinja/Lumenite)");
 
     // .gitignore
     writeFile(root / ".gitignore", R"(
@@ -220,5 +263,5 @@ return app
 build/
 )");
 
-    std::cout << "[+] Created Lumenite workspace: " << name << "\n";
+    log("Created Lumenite workspace: " + name);
 }
