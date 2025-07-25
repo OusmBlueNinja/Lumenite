@@ -412,7 +412,6 @@ static int builtin_module_loader(lua_State *L)
     }
 
     if (!from.empty()) {
-        printf(GREEN "[" PKG_MNGR_NAME "]" RESET " [%-22s] -> %s\n", from.c_str(), mod);
         return 1;
     }
 
@@ -434,14 +433,13 @@ static int builtin_module_loader(lua_State *L)
                 return 2;
             }
 
-            printf(GREEN "[" PKG_MNGR_NAME "]" RESET " [%-22s] -> %s\n", path.c_str(), mod);
             return 1;
         }
     }
 
     // Not found
     lua_pushnil(L);
-    lua_pushfstring(L, "[" PKG_MNGR_NAME "] No Lua module found for '%s'", mod);
+    lua_pushfstring(L, "[" PKG_MNGR_NAME "] No module found for '%s'", mod);
     return 2;
 }
 
