@@ -17,7 +17,7 @@ embedded web tools.
 
 * High-performance C++ backend
 * Lua scripting for routes, templates, JSON, sessions, and more
-* Modular architectureD
+* Modular architecture
 * Built-in template engine
 * Secure request parsing and production-grade cryptography
 
