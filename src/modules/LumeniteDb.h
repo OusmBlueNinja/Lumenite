@@ -5,6 +5,8 @@
 #include <map>
 #include <sqlite3.h>
 #include "lua.hpp"
+#include <fstream>
+#include <chrono>
 
 
 class LumeniteDB
@@ -42,6 +44,7 @@ public:
         std::vector<Row> pending_inserts;
         std::vector<Update> pending_updates;
     };
+
 
     struct Query
     {
@@ -90,6 +93,10 @@ public:
     static std::map<std::string, Model> models;
     static Session session;
     static DB *db_instance;
+
+    static std::string db_filename;
+    static bool sql_log_enabled;
+    static std::ofstream sql_log_stream;
 };
 
 extern "C" int luaopen_lumenite_db(lua_State *L);
