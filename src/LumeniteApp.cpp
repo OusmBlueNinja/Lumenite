@@ -16,6 +16,7 @@
 #include "modules/LumeniteCrypto.h"
 #include "modules/LumeniteDb.h"
 #include "modules/LumeniteSafe.h"
+#include "modules/ModuleBase.h"
 
 #include "utils/MimeDetector.h"
 
@@ -394,54 +395,75 @@ void LumeniteApp::exposeBindings()
 static int builtin_module_loader(lua_State *L)
 {
     const char *mod = luaL_checkstring(L, 1);
+    std::string from;
 
-    if (strcmp(mod, "LumeniteDB") == 0) {
-        lua_pushcfunction(L, luaopen_LumeniteDB);
-        return 1;
-    }
-
-    if (strcmp(mod, "LumeniteCrypto") == 0) {
+    // Native C modules
+    if (strcmp(mod, "lumenite.db") == 0) {
+        from = "builtin";
+        lua_pushcfunction(L, luaopen_lumenite_db);
+    } else if (strcmp(mod, "lumenite.crypto") == 0) {
+        from = "builtin";
         lua_pushcfunction(L, LumeniteCrypto::luaopen);
-        return 1;
-    }
-
-    if (strcmp(mod, "LumeniteSafe") == 0) {
+    } else if (strcmp(mod, "lumenite.safe") == 0) {
+        from = "builtin";
         lua_pushcfunction(L, LumeniteSafe::luaopen);
+    } else if (LumeniteModule::load(mod, L)) {
+        from = "builtin";
+    }
+
+    if (!from.empty()) {
+        printf(GREEN "[" PKG_MNGR_NAME "]" RESET " [%-22s] -> %s\n", from.c_str(), mod);
         return 1;
     }
 
-    //if (strcmp(mod, "test") == 0) {
-    //    lua_pushcfunction(L, luaopen_test);
-    //    return 1;
-    //}
+    // Fallback: search for Lua script
+    std::string relPath = std::string(mod);
+    std::replace(relPath.begin(), relPath.end(), '.', '/'); // test.file → test/file
 
+    std::vector<std::string> searchPaths = {
+        relPath + ".lua",
+        "plugins/" + relPath + ".lua"
+    };
+
+    for (const auto &path: searchPaths) {
+        std::ifstream file(path);
+        if (file.good()) {
+            if (luaL_loadfile(L, path.c_str()) != LUA_OK) {
+                lua_pushnil(L);
+                lua_insert(L, -2);
+                return 2;
+            }
+
+            printf(GREEN "[" PKG_MNGR_NAME "]" RESET " [%-22s] -> %s\n", path.c_str(), mod);
+            return 1;
+        }
+    }
+
+    // Not found
     lua_pushnil(L);
-    lua_pushfstring(L, "[Lumenite] Invalid module '%s'.", mod);
+    lua_pushfstring(L, "[" PKG_MNGR_NAME "] No Lua module found for '%s'", mod);
     return 2;
 }
 
-// ------------------------
-// Register custom searcher
-// ------------------------
+
 void LumeniteApp::injectBuiltins()
 {
     lua_getglobal(L, "package");
-    lua_getfield(L, -1, "searchers");
+    lua_newtable(L); // New searchers table
 
+    // Add our own single custom loader
     lua_pushcfunction(L, builtin_module_loader);
-    for (int i = static_cast<int>(lua_rawlen(L, -1)) + 1; i > 1; --i) {
-        lua_rawgeti(L, -1, i - 1);
-        lua_rawseti(L, -2, i);
-    }
-    lua_rawseti(L, -2, 1);
+    lua_rawseti(L, -2, 1); // package.searchers[1] = builtin_module_loader
 
-    lua_pop(L, 2);
+    lua_setfield(L, -2, "searchers"); // package.searchers = {...}
+    lua_pop(L, 1); // pop package
 }
+
 
 // ————— Route Arg Helper —————
 static bool extract_route_args(lua_State *L, const char *name, std::string &outPath, int &outHandlerIdx)
 {
-    int n = lua_gettop(L);
+    const int n = lua_gettop(L);
     if (n == 2 && lua_isstring(L, 1) && lua_isfunction(L, 2)) {
         outPath = lua_tostring(L, 1);
         outHandlerIdx = 2;
@@ -452,7 +474,7 @@ static bool extract_route_args(lua_State *L, const char *name, std::string &outP
         outHandlerIdx = 3;
         return true;
     }
-    luaL_error(L, "%s(path, handler) or %s:path(handler) expected", name, name);
+    luaL_error(L, "%s(path, handler) expected", name);
     return false;
 }
 

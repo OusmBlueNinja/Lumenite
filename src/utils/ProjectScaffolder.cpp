@@ -1,55 +1,312 @@
-//
-// Created by spenc on 7/21/2025.
-//
-
 #include "ProjectScaffolder.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-
+#include <iomanip>
+#include "Version.h"
 namespace fs = std::filesystem;
 
-#define MSG_OK "[+] "
+// Color codes
+#define RESET     "\033[0m"
+#define BOLD      "\033[1m"
+#define DIM       "\033[2m"
+#define GREEN     "\033[32m"
+#define BLUE      "\033[34m"
+#define CYAN      "\033[36m"
+#define MAGENTA   "\033[35m"
+#define YELLOW    "\033[33m"
+#define RED       "\033[31m"
+#define GRAY      "\033[38;5;240m"
+#define PURPLE    "\033[38;5;99m"
+#define LBLUE     "\033[38;5;81m"
+#define LGREEN    "\033[38;5;120m"
+#define MOON1     "\033[38;5;141m"
+#define MOON2     "\033[38;5;135m"
+#define MOON4     "\033[38;5;63m"
+#define MOON5     "\033[38;5;111m"
+#define MOON6     "\033[38;5;250m"
 
-static void writeFile(const fs::path &path, const std::string &content)
+std::string ProjectScaffolder::colorizePath(const std::string &pathStr, const std::string &projectName)
 {
-    if (fs::exists(path)) {
-        std::cout << "[!] Skipped (already exists): \"" << path.string() << "\"\n";
+    fs::path path(pathStr);
+    std::ostringstream out;
+    const std::string sep = "/";
+
+    fs::path current;
+    bool first = true;
+
+    for (const auto &part: path) {
+        std::string partStr = part.string();
+        current /= part;
+        fs::path absolute = rootPath / current;
+
+        if (!first)
+            out << sep;
+        else
+            first = false;
+
+        // Decide color based on path type
+        if (partStr == projectName) {
+            out << CYAN << BOLD << partStr << RESET;
+        } else if (fs::exists(absolute) && fs::is_directory(absolute)) {
+            out << LBLUE << partStr << RESET; // folder
+        } else {
+            out << LGREEN << partStr << RESET; // file
+        }
+    }
+
+    return out.str();
+}
+
+
+void ProjectScaffolder::log(const std::string &action, const std::string &text)
+{
+    std::string prefix = "[+] ";
+    std::string color;
+
+    if (action == "Created") { color = BOLD GREEN; } else if (action == "Wrote") { color = BOLD BLUE; } else if (
+        action == "Skipped") {
+        color = YELLOW;
+        prefix = "[!] ";
+    } else if (action == "Warning") {
+        color = YELLOW;
+        prefix = "[!] ";
+    } else if (action == "Note") {
+        color = CYAN;
+        prefix = "[~] ";
+    } else if (action == "Error") {
+        color = BOLD RED;
+        prefix = "[x] ";
     } else {
-        std::ofstream file(path);
-        if (file) file << content;
-        std::cout << MSG_OK << "Wrote: " << path << "\n";
+        color = RESET;
+    }
+
+    std::ostringstream aligned;
+    aligned << std::left << std::setw(8) << action;
+
+    std::cout << prefix << color << aligned.str() << ":" << RESET << " ";
+
+    // For path-related actions, use colorized path
+    if (action == "Created" || action == "Wrote" || action == "Skipped")
+        std::cout << colorizePath(text, projectName);
+    else
+        std::cout << color << text;
+
+    std::cout << RESET << "\n";
+}
+
+
+void ProjectScaffolder::createDir(const fs::path &relPath)
+{
+    fs::path full = rootPath / relPath;
+
+    if (fs::exists(full)) {
+        if (deleteExisting) {
+            std::error_code ec;
+            fs::remove_all(full, ec);
+            if (!ec) {
+                log("Deleted", relPath.string());
+                fs::create_directories(full);
+                log("Created", relPath.string());
+            } else {
+                log("Error", "Failed to delete directory: " + ec.message());
+            }
+            return;
+        }
+
+        if (!force) {
+            log("Skipped", relPath.string());
+            return;
+        }
+    }
+
+    fs::create_directories(full);
+    log("Created", relPath.string());
+}
+
+void ProjectScaffolder::writeFile(const fs::path &relPath, const std::string &content)
+{
+    fs::path fullPath = rootPath / relPath;
+
+    if (fs::exists(fullPath)) {
+        if (deleteExisting) {
+            std::error_code ec;
+            fs::remove(fullPath, ec);
+            if (!ec) {
+                log("Deleted", relPath.string());
+            } else {
+                log("Error", "Failed to delete file: " + ec.message());
+                return;
+            }
+        } else if (!force) {
+            log("Skipped", relPath.string());
+            return;
+        }
+    }
+
+    std::ofstream file(fullPath);
+    if (file) {
+        file << content;
+        log("Wrote", relPath.string());
     }
 }
 
-static void createDir(const fs::path &path)
+
+void ProjectScaffolder::createWorkspace(const std::string &name, const std::vector<std::string> &args)
 {
-    fs::create_directories(path);
+    projectName = name;
+    rootPath = fs::current_path() / name;
 
-    std::cout << MSG_OK << "Created: " << path << "\n";
-}
 
-void ProjectScaffolder::createWorkspace(const std::string &name)
-{
-    fs::path root = fs::current_path();
+    for (const auto &arg: args) {
+        if (arg == "--force") force = true;
+        if (arg == "--delete") deleteExisting = true;
+    }
 
-    std::cout << "[*] Initializing project in: " << root.string() << "\n";
+    if (fs::exists(rootPath)) {
+        if (deleteExisting) {
+            std::error_code ec;
+            fs::remove_all(rootPath, ec);
+            if (ec) {
+                log("Error", "failed to delete: " + ec.message());
 
-    // Create directories
-    createDir(root / "templates");
-    createDir(root / ".lumenite");
-    createDir(root / ".vscode");
+                return;
+            } else {
+                log("Deleting", rootPath.filename().string());
+            }
+            fs::create_directories(rootPath);
+        } else if (!force) {
+            log("Error", "directory already exists:  " + rootPath.string());
+            log("Note", "Use '--force' to overwrite files or '--delete' to fully rebuild.");
 
-    // app.lua
-    writeFile(root / "app.lua", R"(-- app.lua
-local safe = require("LumeniteSafe")
+            return;
+        } else {
+            log("Warning", " writing into existing directory: " + rootPath.filename().string());
+        }
+    } else {
+        fs::create_directories(rootPath);
+    }
+
+
+    log("Created", name);
+
+    // Banner
+    std::cout << "\n" <<
+            MOON1 << " _                                _ _       \n" <<
+            MOON2 << "| |                              (_) |      \n" <<
+            PURPLE << "| |    _   _ _ __ ___   ___ _ __  _| |_ ___ \n" <<
+            MOON4 << "| |   | | | | '_ ` _ \\ / _ \\ '_ \\| | __/ _ \\\n" <<
+            MOON5 << "| |___| |_| | | | | | |  __/ | | | | ||  __/\n" <<
+            MOON6 << "\\_____/\\__,_|_| |_| |_|\\___|_| |_|_|\\__\\___|\n" <<
+            RESET << std::endl;
+
+    std::cout << BOLD << MOON6 << "A fresh Lumenite project\n\n" << RESET;
+
+    std::cout << CYAN << "[*] Initializing Lumenite project in: " << rootPath.string() << RESET << "\n";
+
+    std::ostringstream config;
+    config << "project_name: " << projectName << "\n";
+    config << "lumenite_version: " LUMENITE_RELEASE_VERSION "\n";
+
+    writeFile("config.luma", config.str());
+
+    // Create main subdirectories
+    createDir("app");
+
+
+    // app/routes.lua
+    std::string routesLua = R"(-- app/routes.lua
+local crypto = require("lumenite.crypto")
+local models = require("app.models")
+
+--[[
+   Application Routes
+
+   Define your URL endpoints and route handlers here.
+   Routes map incoming requests to specific logic and responses.
+
+   This example defines a simple GET route for the homepage ("/")
+   that renders a template with dynamic values.
+
+   You can define more routes using:
+     app:get(path, handler)
+     app:post(path, handler)
+     app:json(path, handler)
+--]]
+
 
 app:get("/", function(request)
-    return app.render_template("index.html", {
-        title = "Welcome to Lumenite!",
-        message = "This page is rendered using a template.",
+    return app.render_template("template.html", {
+        title = "Welcome to Lumenite",
+        project_name = "{{project_name}}",
+        content = "<p>This content was injected into the layout.</p>",
         timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC")
     })
+end)
+
+)";
+
+    size_t pos = routesLua.find("{{project_name}}");
+    if (pos != std::string::npos) {
+        routesLua.replace(pos, 16, name);
+    }
+    writeFile("app/routes.lua", routesLua);
+
+    // app/filters.lua
+    writeFile("app/filters.lua", R"(-- app/filters.lua
+local safe = require("lumenite.safe")
+
+--[[
+   Template Filters
+
+   This file defines custom filters available in your templates.
+
+   Filters allow you to transform data inside templates:
+     Example usage in template.html:
+       {{ title | upper }}         -- convert title to uppercase
+       {{ content | safe }}        -- mark content as safe HTML
+
+   Defining a filter:
+     app:template_filter("name", function(input)
+         -- do something with input
+         return result
+     end)
+
+   This example defines a 'safe' filter using the Lumenite Safe module,
+   which escapes HTML to prevent XSS vulnerabilities.
+
+   You can add more filters here, like:
+     "truncate", "markdown", "date_format", etc.
+--]]
+
+
+
+app:template_filter("safe", function(input)
+    return safe.escape(input)
+end)
+
+)");
+
+    // app/middleware.lua
+    writeFile("app/middleware.lua", R"(-- app/middleware.lua
+local models = require("app.models")
+
+--[[
+   Middleware configuration for Lumenite.
+   Use this file to register hooks that run before or after each request.
+
+   - app.before_request(fn): Called before every route
+   - app.after_request(fn):  Called after every route
+
+   Example use cases:
+   • Logging
+   • Authentication
+   • Header manipulation
+--]]
+
+app.before_request(function(req)
+    -- Example: log the User-Agent
+    -- print(req.headers["User-Agent"])
 end)
 
 app.after_request(function(request, response)
@@ -57,37 +314,79 @@ app.after_request(function(request, response)
     return response
 end)
 
-app:template_filter("safe", function(input)
-    return safe.escape(input)
-end)
 
-
-app:listen(8080)
 )");
 
-    // templates/index.html
-    writeFile(root / "templates" / "index.html", R"(<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
+    writeFile("app/models.lua", R"(-- app/models.lua
+local db = require("lumenite.db")
+
+--[[
+   Model definitions for your application.
+
+   ⚠️ Note:
+   The ORM layer is still under active development and may be incomplete or unstable.
+   You can define basic table schemas and work with raw queries for now.
+
+   Example:
+   -- User = db.Model {
+   --     __tablename = "users",
+   --     id = db.Column("id", "INTEGER", { primary_key = true }),
+   --     name = db.Column("name", "TEXT"),
+   --     created_at = db.Column("created_at", "TEXT")
+   -- }
+
+   Stay tuned for full ORM capabilities!
+--]]
+
+
+)");
+
+
+    createDir("templates");
+    // templates/template.html
+    writeFile("templates/template.html", R"(<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
     <title>{{ title }}</title>
     <style>
-        body { font-family: sans-serif; padding: 2rem; background: #f9f9f9; }
-        h1 { color: #333; }
-        p  { color: #555; }
+      body {
+        font-family: sans-serif;
+        padding: 2rem;
+        background: #f9f9f9;
+      }
+      header {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #333;
+      }
+      footer {
+        margin-top: 2rem;
+        font-size: 0.85rem;
+        color: #777;
+      }
     </style>
-</head>
-<body>
-    <h1>{{ title }}</h1>
-    <p>{{ message }}</p>
-    <p><em>Viewed at {{ timestamp }}</em></p>
-</body>
+  </head>
+  <body>
+    <header>{{ project_name }}</header>
+    <main>
+      <h2>{{ title }}</h2>
+      {{ content }}
+    </main>
+    <footer>
+      <em>Rendered at {{ timestamp }}</em>
+    </footer>
+  </body>
 </html>
+
 )");
 
-    // types/__syntax__.lua
-    writeFile(root / ".lumenite" / "__syntax__.lua", R"(
+    createDir("db");
 
+
+    createDir(".lumenite");
+    // .lumenite/__syntax__.lua (EMPTY)
+    writeFile(".lumenite/__syntax__.lua", R"(
 ---@meta
 
 --[[----------------------------------------------------------------------------
@@ -206,19 +505,80 @@ function app:listen(port) end
 _G.app = app
 
 return app
+    )");
 
 
+    createDir("log");
+    writeFile("log/latest.log", "Hello, World!");
+    createDir("vendor");
 
+    createDir("plugins");
+    writeFile("plugins/modules.cpl", R"(# Lumenite Plugins
+plugins: []
+)");
+
+
+    writeFile("app.lua", R"(-- app.lua
+
+--[[
+   Lumenite Entry Point
+
+   This is your main application bootstrap file.
+   It loads route handlers, middleware, filters, and models.
+
+   Each file in the `app/` folder encapsulates a part of your app:
+     - filters.lua     → defines custom template filters
+     - middleware.lua  → defines pre- and post-request logic
+     - routes.lua      → defines HTTP route handlers
+     - models.lua      → defines database models (ORM)
+
+   You can customize the port or add environment setup here.
+   This file is the first thing run by the Lumenite engine.
+--]]
+
+require("app.filters")
+require("app.middleware")
+require("app.routes")
+require("app.models")
+
+app:listen(8080)
 
 )");
 
+
+    // README.md
+    writeFile("README.md", "# " + name + "\n\nMade by [Lumenite](https://github.com/OusmBlueNinja/Lumenite)");
+
     // .gitignore
-    writeFile(root / ".gitignore", R"(
+    writeFile(".gitignore", R"(
 *.db
 *.log
 .vscode/
 build/
 )");
 
-    std::cout << "[+] Created Lumenite workspace: " << name << "\n";
+    createDir(".vscode");
+    writeFile(".vscode/settings.json", R"({
+  "files.associations": {
+    "*.cpl": "yaml",
+    "*.luma": "yaml",
+    "*.lma": "yaml",
+    "*.payload": "yaml",
+    "*.pyld": "yaml",
+    "*.pld": "yaml"
+  },
+  "vsicons.associations.folders": [
+    {
+      "icon": "config",
+      "extensions": [
+        "lumenite"
+      ],
+      "format": "svg"
+    }
+  ]
+}
+)");
+
+
+    log("Created", "Lumenite workspace: " + name);
 }

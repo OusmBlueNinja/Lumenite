@@ -179,7 +179,7 @@ void printLocalIPs(int port)
     std::cout << BOLD << CYAN << " *" << RESET << " " << BOLD << "Lumenite Server" << RESET << " running at:\n";
 
     for (const auto &ip: addresses) {
-        std::cout << "   " << BOLD << "→" << RESET << " "
+        std::cout << "   " << BOLD << "->" << RESET << " "
                 << YELLOW << "http://" << ip << ":" << port << RESET << "\n";
     }
 

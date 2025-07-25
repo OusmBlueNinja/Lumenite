@@ -4,7 +4,7 @@
 #include "Router.h"
 #include "SessionManager.h"
 #include "json/value.h"
-
+#define PKG_MNGR_NAME "Payload"
 
 extern "C"
 {
@@ -27,7 +27,6 @@ public:
     static int before_request_ref;
     static int after_request_ref;
     static int on_abort_ref;
-
 
 private:
     lua_State *L;
