@@ -431,7 +431,7 @@ print("All tests passed!")
 
 )");
 
-    createDir("db");    
+    createDir("db");
 
 
     createDir(".lumenite");
@@ -440,7 +440,7 @@ print("All tests passed!")
 ---@module "lumenite.db"
 local db = {}
 
----@alias ColumnOptions { primary_key?: boolean }
+---@alias ColumnOptions { primary_key?: boolean, default?: any }
 
 ---@alias ColumnDef { name: string, type: string, primary_key: boolean }
 
@@ -503,7 +503,6 @@ function db.session_commit() end
 function db.select_all(tablename) end
 
 return db
-
 
     )");
 

@@ -2,7 +2,7 @@
 ---@module "lumenite.db"
 local db = {}
 
----@alias ColumnOptions { primary_key?: boolean }
+---@alias ColumnOptions { primary_key?: boolean, default?: any }
 
 ---@alias ColumnDef { name: string, type: string, primary_key: boolean }
 
