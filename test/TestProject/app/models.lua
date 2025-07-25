@@ -17,52 +17,56 @@ local db = require("lumenite.db")
        • :filter_by{…}  – Add a WHERE clause
        • :order_by(expr)– Add an ORDER BY clause
    • db.session_add(row)          – Stage a row for insertion
-   • db.session_commit()          – Commit all staged inserts
+   • db.session_commit()          – Commit all staged inserts and updates
+   • db.select_all(tableName)     – Fetch all rows from a raw table
 --]]
 
-
-
+-- 1) Open (or create) the database file
 local conn, err = db.open("user.db")
 assert(conn, "db.open failed: " .. tostring(err))
 
--- 2) define a simple User model
+-- 2) Define a simple User model
 local User = db.Model {
    __tablename = "users",
-   id = db.Column("id", "INTEGER", { primary_key = true }),
-   name = db.Column("name", "TEXT"),
-   created_at = db.Column("created_at", "TEXT")
+   id          = db.Column("id", "INTEGER", { primary_key = true }),
+   name        = db.Column("name", "TEXT"),
+   created_at  = db.Column("created_at", "TEXT")
 }
 
--- 3) create the table
+-- 3) Create the table
 db.create_all()
 
--- 4) insert a few rows
+-- 4) Insert a few rows
 for _, name in ipairs { "Alice", "Bob", "Charlie" } do
-   local u = User.new { name = name }
+   local u = User.new { name = name, created_at = os.date("%Y-%m-%d") }
    db.session_add(u)
 end
 db.session_commit()
 
--- 5) select_all test
 local all = db.select_all("users")
 print("All users:")
 for i, row in ipairs(all) do
    print(i, row.id, row.name)
 end
 
--- 6) query.filter_by + .all()
 local alices = User.query:filter_by({ name = "Alice" }):all()
 assert(#alices == 1, "Expected exactly one Alice")
 print("Queried Alice -> id=" .. alices[1].id)
 
--- 7) query:get(id)
 local bob = User.query:get(2)
 assert(bob and bob.name == "Bob", "Expected Bob at id=2")
 print("User.get(2) -> name=" .. bob.name)
 
--- 8) query:first() with order_by
 local last = User.query:order_by(User.name:desc()):first()
-assert(last, "Last is nil")
+assert(last, "Expected a non-nil result from first()")
 print("First by name DESC ->", last.id, last.name)
+
+local alice = User.query:get(1)
+print("Before update ->", alice.id, alice.name)
+alice.name = "Alicia"
+db.session_commit()
+local updated = User.query:get(1)
+assert(updated.name == "Alicia", "Expected name='Alicia', got " .. tostring(updated.name))
+print("After update  ->", updated.id, updated.name)
 
 print("All tests passed!")

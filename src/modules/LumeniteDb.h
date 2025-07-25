@@ -6,6 +6,7 @@
 #include <sqlite3.h>
 #include "lua.hpp"
 
+
 class LumeniteDB
 {
 public:
@@ -14,7 +15,9 @@ public:
         std::string name;
         std::string type;
         bool primary_key = false;
+        std::string default_value;
     };
+
 
     struct Model
     {
@@ -27,10 +30,17 @@ public:
         std::map<std::string, std::string> values;
     };
 
+    struct Update
+    {
+        std::string tablename;
+        std::map<std::string, std::string> changes;
+    };
+
     struct Session
     {
         std::string tablename;
         std::vector<Row> pending_inserts;
+        std::vector<Update> pending_updates;
     };
 
     struct Query
