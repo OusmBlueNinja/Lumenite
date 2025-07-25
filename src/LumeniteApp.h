@@ -28,6 +28,8 @@ public:
     static int after_request_ref;
     static int on_abort_ref;
 
+    static bool listening;
+
 private:
     lua_State *L;
 

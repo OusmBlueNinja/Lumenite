@@ -26,7 +26,7 @@ bool running = false;
 int LumeniteApp::before_request_ref = LUA_NOREF;
 int LumeniteApp::after_request_ref = LUA_NOREF;
 int LumeniteApp::on_abort_ref = LUA_NOREF;
-
+bool LumeniteApp::listening = false;
 
 #ifdef _WIN32
 #include <windows.h>
@@ -479,6 +479,11 @@ static bool extract_route_args(lua_State *L, const char *name, std::string &outP
 
 int LumeniteApp::lua_abort(lua_State *L)
 {
+    if (!listening) {
+        return luaL_error(L, "app.abort() requires app to be listening; app:listen(port)");
+    }
+
+
     const lua_Integer status = luaL_checkinteger(L, 1);
 
     if (status < 100 || status > 599) {
@@ -799,6 +804,7 @@ int LumeniteApp::lua_listen(lua_State *L)
     else return luaL_error(L, "expected an integer port as argument");
 
     Server srv(port, L);
+    listening = true;
     srv.run();
     return 0;
 }
