@@ -2,7 +2,7 @@
 
 # Lumenite
 
-[![Star](https://img.shields.io/github/stars/OusmBlueNinja/Lumenite?style=social)](https://github.com/OusmBlueNinja/Lumenite/stargazers)
+[![Star](https://img.shields.io/github/stars/OusmBlueNinja/Lumenite?style=)](https://github.com/OusmBlueNinja/Lumenite/stargazers)
 
 **Lumenite** is a blazing-fast, embeddable web server framework built in **C++** with a powerful **Lua scripting
 interface**.
@@ -17,7 +17,7 @@ embedded web tools.
 
 * High-performance C++ backend
 * Lua scripting for routes, templates, JSON, sessions, and more
-* Modular architectureD
+* Modular architecture
 * Built-in template engine
 * Secure request parsing and production-grade cryptography
 
