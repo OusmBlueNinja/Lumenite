@@ -1,53 +1,34 @@
 #include "ModuleBase.h"
 #include "../ErrorHandler.h"
-#include "../LumeniteApp.h"  // contains #define PKG_MNGR_NAME "LPM"
-
-#include <fstream>
 #include <iostream>
-#include <iomanip>
-#include <sstream>
-#include <yaml-cpp/yaml.h>
 #include <filesystem>
+
+
 
 #ifdef _WIN32
 #include <Windows.h>
 #else
-    #include <dlfcn.h>
+#include <dlfcn.h>
 #endif
 
-#include <openssl/sha.h>
+#define ENGINE_VERSION "2025.5"
+#define PKG_MNGR_NAME "LPM"
 
 namespace fs = std::filesystem;
+static const fs::path PLUGIN_DIR = "plugins";
 
-constexpr const char *ENGINE_VERSION = "1.0.0";
-const fs::path PLUGIN_DIR = "plugins";
-const fs::path MANIFEST_PATH = PLUGIN_DIR / "modules.cpl";
-
-// Compute SHA-256 hash of a file
-std::string sha256_file(const std::string &filepath)
+inline void logLPM(const std::string &symbol, const std::string &message, const char *color = WHITE)
 {
-    std::ifstream file(filepath, std::ios::binary);
-    if (!file) return "";
-
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-
-    char buffer[8192];
-    while (file.good()) {
-        file.read(buffer, sizeof(buffer));
-        SHA256_Update(&ctx, buffer, file.gcount());
-    }
-
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256_Final(hash, &ctx);
-
-    std::ostringstream result;
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
-        result << std::hex << std::setw(2) << std::setfill('0') << (int) hash[i];
-    return result.str();
+    std::cerr << WHITE "[" << color << symbol << WHITE "] "
+            << CYAN << "LPM" << WHITE ": " << RESET
+            << message << std::endl;
 }
 
-// Registry
+static void logLPM_hint(const std::string &hint)
+{
+    std::cerr << "         " << CYAN << "↳ " << hint << RESET << std::endl;
+}
+
 std::unordered_map<std::string, std::unique_ptr<LumeniteModule> > &LumeniteModule::registry()
 {
     static std::unordered_map<std::string, std::unique_ptr<LumeniteModule> > mods;
@@ -61,112 +42,125 @@ void LumeniteModule::registerModule(std::unique_ptr<LumeniteModule> mod)
 
 int LumeniteModule::load(const char *modname, lua_State *L)
 {
-    if (const auto it = registry().find(modname); it != registry().end()) {
-        return it->second->open(L);
+    const auto it = registry().find(modname);
+    if (it != registry().end()) {
+        auto *fn = it->second->getLuaOpen();
+        if (fn) {
+            lua_pushcfunction(L, fn);
+            return 1;
+        }
     }
     return 0;
 }
 
-// Plugin Loader
-void LumeniteModule::loadPluginsFromConfig(const std::string &unusedPath)
+class LumeniteDynamicModule final : public LumeniteModule
 {
-    if (!fs::exists(MANIFEST_PATH)) {
-        std::cerr << WHITE "[" RED "!" WHITE "] " RESET
-                << PKG_MNGR_NAME << ": config not found: " << MANIFEST_PATH << std::endl;
+public:
+    LumeniteDynamicModule(std::string name, std::string version, int (*open)(lua_State *))
+        : _name(std::move(name)), _version(std::move(version)), _luaopen(open)
+    {
+    }
+
+    const std::string &name() const override { return _name; }
+    int open(lua_State *L) override { return _luaopen(L); }
+    int (*getLuaOpen() const)(lua_State *) override { return _luaopen; }
+
+private:
+    std::string _name;
+    std::string _version;
+
+    int (*_luaopen)(lua_State *);
+};
+
+void LumeniteModule::loadPluginsFromDirectory()
+{
+    if (!fs::exists(PLUGIN_DIR)) {
+        logLPM("!", "Plugin directory not found: " + PLUGIN_DIR.string());
         return;
     }
 
-    try {
-        YAML::Node config = YAML::LoadFile(MANIFEST_PATH.string());
-        const auto &plugins = config["plugins"];
+    for (const auto &entry: fs::directory_iterator(PLUGIN_DIR)) {
+        if (!entry.is_regular_file())
+            continue;
 
-        if (!plugins || !plugins.IsSequence()) {
-            std::cerr << WHITE "[" RED "!" WHITE "] " RESET
-                    << PKG_MNGR_NAME << ": invalid or missing 'plugins' list in modules.cpl" << std::endl;
-            return;
+        const std::string filename = entry.path().filename().string();
+        if (filename.rfind("lumenite_", 0) != 0)
+            continue;
+
+        std::string pluginName = filename.substr(strlen("lumenite_"));
+        pluginName = pluginName.substr(0, pluginName.find_last_of('.'));
+
+#ifdef _WIN32
+        if (entry.path().extension() != ".dll") continue;
+
+        std::wstring widePath = std::filesystem::absolute(entry.path()).wstring();
+        SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS);
+        AddDllDirectory(std::filesystem::absolute(PLUGIN_DIR).wstring().c_str());
+
+        HMODULE lib = LoadLibraryExW(widePath.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+        if (!lib) {
+            DWORD errCode = GetLastError();
+            LPSTR msg = nullptr;
+            FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, nullptr, errCode, 0,
+                           (LPSTR) &msg, 0, nullptr);
+            logLPM("!", "Failed to load plugin " + pluginName + ":\n         " + (msg ? msg : "Unknown error"));
+            if (msg) LocalFree(msg);
+            continue;
         }
 
-        for (const auto &plugin: plugins) {
-            std::string name = plugin["name"].as<std::string>();
-            std::string file = plugin["path"].as<std::string>();
-            std::string version = plugin["version"].as<std::string>();
-            std::string engineVersion = plugin["Engine-Version"].as<std::string>();
-            std::string expectedHash = plugin["sha256"].as<std::string>();
-
-            // Engine version check
-            if (engineVersion != ENGINE_VERSION) {
-                std::cerr << WHITE "[" RED "!" WHITE "] " RESET
-                        << PKG_MNGR_NAME << ": skipping " << BOLD << name << RESET
-                        << " due to engine version mismatch (" << engineVersion
-                        << " != " << ENGINE_VERSION << ")" << std::endl;
-                continue;
-            }
-
-            // Path validation
-            if (file.find("..") != std::string::npos || fs::path(file).is_absolute()) {
-                std::cerr << WHITE "[" YELLOW "-" WHITE "] " RESET
-                        << PKG_MNGR_NAME << ": invalid path for " << BOLD << name << RESET << ": " << file << std::endl;
-                continue;
-            }
-
-            fs::path pluginPath = PLUGIN_DIR / fs::path(file);
-            if (!fs::exists(pluginPath)) {
-                std::cerr << WHITE "[" RED "!" WHITE "] " RESET
-                        << PKG_MNGR_NAME << ": plugin file not found: " << pluginPath << std::endl;
-                continue;
-            }
-
-            // SHA-256 hash check
-            std::string actualHash = sha256_file(pluginPath.string());
-            if (expectedHash != actualHash) {
-                std::cerr << WHITE "[" RED "!" WHITE "] " RESET
-                        << PKG_MNGR_NAME << ": plugin " << BOLD << name << RESET << " failed hash check." << std::endl;
-                std::cerr << "    Expected: " << expectedHash << std::endl;
-                std::cerr << "    Found   : " << actualHash << std::endl;
-                continue;
-            }
-
-            // Load the plugin
-#ifdef _WIN32
-            HMODULE lib = LoadLibraryExA(pluginPath.string().c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-            if (!lib) {
-                std::cerr << WHITE "[" RED "!" WHITE "] " RESET
-                        << PKG_MNGR_NAME << ": failed to load DLL: " << pluginPath << std::endl;
-                continue;
-            }
-
-            using LuaOpenFunc = int(*)(lua_State *);
-            LuaOpenFunc openFunc = reinterpret_cast<LuaOpenFunc>(GetProcAddress(lib, "luaopen_plugin"));
+        auto getMeta = reinterpret_cast<const LumenitePluginMeta *(*)()>(GetProcAddress(lib, "lumenite_get_pmeta"));
 #else
-            void* lib = dlopen(pluginPath.string().c_str(), RTLD_NOW);
-            if (!lib) {
-                std::cerr << WHITE "[" RED "!" WHITE "] " RESET
-                          << PKG_MNGR_NAME << ": failed to load plugin: " << pluginPath << " (" << dlerror() << ")" << std::endl;
-                continue;
-            }
+        if (entry.path().extension() != ".so") continue;
 
-            using LuaOpenFunc = int(*)(lua_State*);
-            LuaOpenFunc openFunc = (LuaOpenFunc)dlsym(lib, "luaopen_plugin");
-#endif
-
-            if (!openFunc) {
-                std::cerr << WHITE "[" RED "!" WHITE "] " RESET
-                        << PKG_MNGR_NAME << ": " << BOLD << name << RESET << " does not export luaopen_plugin" <<
-                        std::endl;
-#ifdef _WIN32
-                FreeLibrary(lib);
-#else
-                dlclose(lib);
-#endif
-                continue;
-            }
-
-            std::cout << WHITE "[" GREEN "+" WHITE "] " RESET
-                    << PKG_MNGR_NAME << ": loaded plugin: " << BOLD << name << RESET
-                    << " (" << version << ")" << std::endl;
+        void *lib = dlopen(entry.path().c_str(), RTLD_NOW);
+        if (!lib) {
+            logLPM("!", "Failed to load plugin " + pluginName + ": " + dlerror());
+            continue;
         }
-    } catch (const YAML::Exception &ex) {
-        std::cerr << WHITE "[" RED "!" WHITE "] " RESET
-                << PKG_MNGR_NAME << ": YAML parse error: " << ex.what() << std::endl;
+
+        auto getMeta = reinterpret_cast<const LumenitePluginMeta *(*)()>(dlsym(lib, "lumenite_get_pmeta"));
+#endif
+
+        if (!getMeta) {
+            logLPM("!", "Plugin " + pluginName + " is missing required export lumenite_get_pmeta()");
+#ifdef _WIN32
+            FreeLibrary(lib);
+#else
+            dlclose(lib);
+#endif
+            continue;
+        }
+
+        const LumenitePluginMeta *meta = getMeta();
+        if (!meta || !meta->name || !meta->version || !meta->luaopen) {
+            logLPM("!", "Plugin " + pluginName + " has invalid or incomplete metadata.");
+#ifdef _WIN32
+            FreeLibrary(lib);
+#else
+            dlclose(lib);
+#endif
+            continue;
+        }
+
+        if (std::string(meta->engine_version) != ENGINE_VERSION) {
+            logLPM("-", "Skipping plugin " + std::string(meta->name) + ": engine version mismatch (" +
+                        meta->engine_version + " != " + ENGINE_VERSION + ")", YELLOW);
+#ifdef _WIN32
+            FreeLibrary(lib);
+#else
+            dlclose(lib);
+#endif
+            continue;
+        }
+
+        std::string safeName = meta->name;
+        std::string safeVersion = meta->version;
+        if (!safeName.empty() && safeName.front() == '"' && safeName.back() == '"')
+            safeName = safeName.substr(1, safeName.size() - 2);
+        if (!safeVersion.empty() && safeVersion.front() == '"' && safeVersion.back() == '"')
+            safeVersion = safeVersion.substr(1, safeVersion.size() - 2);
+
+        registerModule(std::make_unique<LumeniteDynamicModule>(safeName, safeVersion, meta->luaopen));
+        logLPM("+", "Plugin \"" + safeName + "\" loaded successfully  [" + safeVersion + "]", GREEN);
     }
 }
