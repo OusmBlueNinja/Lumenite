@@ -13,8 +13,9 @@ local models = require("app.models")
 --]]
 
 app:get("/api/ping", function(request)
-    return {
+    return app.jsonify({
         status = "ok",
-        time = os.date("!%Y-%m-%d %H:%M:%S UTC")
-    }
+        time = os.date("!%Y-%m-%d %H:%M:%S UTC"),
+        headers = request.headers
+    })
 end)

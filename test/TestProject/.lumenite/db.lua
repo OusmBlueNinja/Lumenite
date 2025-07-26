@@ -65,3 +65,5 @@ function db.session_commit() end
 function db.select_all(tablename) end
 
 return db
+
+    
