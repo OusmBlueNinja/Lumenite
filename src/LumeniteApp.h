@@ -4,7 +4,7 @@
 #include "Router.h"
 #include "SessionManager.h"
 #include "json/value.h"
-#define PKG_MNGR_NAME "Payload"
+#define PKG_MNGR_NAME "LPM"
 
 extern "C"
 {

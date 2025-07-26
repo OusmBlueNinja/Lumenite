@@ -7,6 +7,7 @@ local function test()
    os.remove("./log/" .. dbfile .. ".log")
 
 
+
    -- 1) open
    local conn, err = db.open(dbfile)
    assert(conn, "db.open failed: " .. tostring(err))
@@ -90,10 +91,11 @@ local function test()
           :limit(1)
           :all()
 
-      assert(#subset == 1, "invalid response length, expected 1, got: " .. #subset)
-      assert(subset[1].name == "Charlie",
-         "chain filter/order/limit => Charlie")
+
+      assert(#subset == 1, "invalid response length, expected 1, got: " .. #subset) -- this is a know bug, working on it rn.
+      assert(subset[1].name == "Charlie", "chain filter/order/limit => Charlie")
    end
+
 
    print("✅ All tests passed!")
 end

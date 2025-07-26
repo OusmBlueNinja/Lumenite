@@ -197,6 +197,9 @@ int LumeniteApp::loadScript(const std::string &path) const
         return 1;
     }
 
+
+    LumeniteModule::loadPluginsFromConfig();
+
     lua_getglobal(L, "debug");
     lua_getfield(L, -1, "traceback");
     lua_remove(L, -2);

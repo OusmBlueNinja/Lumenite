@@ -210,30 +210,26 @@ void ProjectScaffolder::createWorkspace(const std::string &name, const std::vect
 
     writeFile("config.luma", config.str());
 
-    // Create main subdirectories
     createDir("app");
 
+    createDir("app/routes");
 
-    // app/routes.lua
-    std::string routesLua = R"(-- app/routes.lua
+
+    // --- app/routes/web.lua ---
+    std::string webRoutes = R"(-- app/routes/web.lua
 local crypto = require("lumenite.crypto")
 local models = require("app.models")
 
 --[[
-   Application Routes
+   Web Routes
 
-   Define your URL endpoints and route handlers here.
-   Routes map incoming requests to specific logic and responses.
+   Define routes that render HTML views or templates.
+   These are typically used for browser-facing endpoints.
 
-   This example defines a simple GET route for the homepage ("/")
-   that renders a template with dynamic values.
-
-   You can define more routes using:
+   You can define routes using:
      app:get(path, handler)
      app:post(path, handler)
-     app:json(path, handler)
 --]]
-
 
 app:get("/", function(request)
     return app.render_template("template.html", {
@@ -243,14 +239,39 @@ app:get("/", function(request)
         timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC")
     })
 end)
-
 )";
 
-    size_t pos = routesLua.find("{{project_name}}");
+    size_t pos = webRoutes.find("{{project_name}}");
     if (pos != std::string::npos) {
-        routesLua.replace(pos, 16, name);
+        webRoutes.replace(pos, 16, name);
     }
-    writeFile("app/routes.lua", routesLua);
+    writeFile("app/routes/web.lua", webRoutes);
+
+    // --- app/routes/api.lua ---
+    std::string apiRoutes = R"(-- app/routes/api.lua
+local models = require("app.models")
+
+--[[
+   API Routes
+
+   Define routes that return JSON responses (REST-style).
+   These are typically used by client apps or JavaScript.
+
+   You can define routes using:
+     app:get(path, handler)
+     app:post(path, handler)
+--]]
+
+app:get("/api/ping", function(request)
+    return {
+        status = "ok",
+        time = os.date("!%Y-%m-%d %H:%M:%S UTC")
+    }
+end)
+)";
+
+    writeFile("app/routes/api.lua", apiRoutes);
+
 
     // app/filters.lua
     writeFile("app/filters.lua", R"(-- app/filters.lua
@@ -318,7 +339,6 @@ end)
 )");
 
     writeFile("app/models.lua", R"(-- app/models.lua
--- app/models.lua
 local db = require("lumenite.db")
 
 --[[
@@ -334,8 +354,8 @@ local db = require("lumenite.db")
        • :get(id)       - Fetch a single row by primary key
        • :all()         - Fetch all matching rows
        • :first()       - Fetch the first matching row
-       • :filter_by{…}  - Add a WHERE clause
-       • :order_by(expr)- Add an ORDER BY clause
+       • :filter_by{…}  - Filter rows by a set of conditions
+       • :order_by(expr)- Order by a set of conditions
    • db.session_add(row)          - Stage a row for insertion
    • db.session_commit()          - Commit all staged inserts
 --]]
@@ -350,7 +370,7 @@ local User = db.Model {
    __tablename = "users",
    id = db.Column("id", "INTEGER", { primary_key = true }),
    name = db.Column("name", "TEXT"),
-   created_at = db.Column("created_at", "TEXT")
+   created_at = db.Column("created_at", "TEXT", { default = os.time })
 }
 
 -- 3) create the table
@@ -659,7 +679,9 @@ plugins: []
 require("app.models")
 require("app.filters")
 require("app.middleware")
-require("app.routes")
+
+require("app.routes.web")
+require("app.routes.api")
 
 app:listen(8080)
 
