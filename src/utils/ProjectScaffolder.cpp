@@ -210,30 +210,26 @@ void ProjectScaffolder::createWorkspace(const std::string &name, const std::vect
 
     writeFile("config.luma", config.str());
 
-    // Create main subdirectories
     createDir("app");
 
+    createDir("app/routes");
 
-    // app/routes.lua
-    std::string routesLua = R"(-- app/routes.lua
+
+    // --- app/routes/web.lua ---
+    std::string webRoutes = R"(-- app/routes/web.lua
 local crypto = require("lumenite.crypto")
 local models = require("app.models")
 
 --[[
-   Application Routes
+   Web Routes
 
-   Define your URL endpoints and route handlers here.
-   Routes map incoming requests to specific logic and responses.
+   Define routes that render HTML views or templates.
+   These are typically used for browser-facing endpoints.
 
-   This example defines a simple GET route for the homepage ("/")
-   that renders a template with dynamic values.
-
-   You can define more routes using:
+   You can define routes using:
      app:get(path, handler)
      app:post(path, handler)
-     app:json(path, handler)
 --]]
-
 
 app:get("/", function(request)
     return app.render_template("template.html", {
@@ -243,14 +239,41 @@ app:get("/", function(request)
         timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC")
     })
 end)
+)";
+
+    size_t pos = webRoutes.find("{{project_name}}");
+    if (pos != std::string::npos) {
+        webRoutes.replace(pos, 16, name);
+    }
+    writeFile("app/routes/web.lua", webRoutes);
+
+    // --- app/routes/api.lua ---
+    std::string apiRoutes = R"(-- app/routes/api.lua
+local models = require("app.models")
+
+--[[
+   API Routes
+
+   Define routes that return JSON responses (REST-style).
+   These are typically used by client apps or JavaScript.
+
+   You can define routes using:
+     app:get(path, handler)
+     app:post(path, handler)
+--]]
+
+app:get("/api/ping", function(request)
+    return app.jsonify({
+        status = "ok",
+        time = os.date("!%Y-%m-%d %H:%M:%S UTC"),
+        headers = request.headers
+    })
+end)
 
 )";
 
-    size_t pos = routesLua.find("{{project_name}}");
-    if (pos != std::string::npos) {
-        routesLua.replace(pos, 16, name);
-    }
-    writeFile("app/routes.lua", routesLua);
+    writeFile("app/routes/api.lua", apiRoutes);
+
 
     // app/filters.lua
     writeFile("app/filters.lua", R"(-- app/filters.lua
@@ -318,7 +341,6 @@ end)
 )");
 
     writeFile("app/models.lua", R"(-- app/models.lua
--- app/models.lua
 local db = require("lumenite.db")
 
 --[[
@@ -334,8 +356,8 @@ local db = require("lumenite.db")
        • :get(id)       - Fetch a single row by primary key
        • :all()         - Fetch all matching rows
        • :first()       - Fetch the first matching row
-       • :filter_by{…}  - Add a WHERE clause
-       • :order_by(expr)- Add an ORDER BY clause
+       • :filter_by{…}  - Filter rows by a set of conditions
+       • :order_by(expr)- Order by a set of conditions
    • db.session_add(row)          - Stage a row for insertion
    • db.session_commit()          - Commit all staged inserts
 --]]
@@ -350,7 +372,7 @@ local User = db.Model {
    __tablename = "users",
    id = db.Column("id", "INTEGER", { primary_key = true }),
    name = db.Column("name", "TEXT"),
-   created_at = db.Column("created_at", "TEXT")
+   created_at = db.Column("created_at", "TEXT", { default = os.time() })
 }
 
 -- 3) create the table
@@ -396,38 +418,83 @@ print("All tests passed!")
     // templates/template.html
     writeFile("templates/template.html", R"(<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>{{ title }}</title>
-    <style>
-      body {
-        font-family: sans-serif;
-        padding: 2rem;
-        background: #f9f9f9;
-      }
-      header {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #333;
-      }
-      footer {
-        margin-top: 2rem;
-        font-size: 0.85rem;
-        color: #777;
-      }
-    </style>
-  </head>
-  <body>
-    <header>{{ project_name }}</header>
-    <main>
-      <h2>{{ title }}</h2>
-      {{ content }}
-    </main>
-    <footer>
-      <em>Rendered at {{ timestamp }}</em>
-    </footer>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ title }}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(to bottom right, #1e1e2f, #2c2c3e);
+      color: #f2f2f2;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    header {
+      background-color: #2a2a3a;
+      padding: 1.5rem 2rem;
+      font-size: 1.75rem;
+      font-weight: 600;
+      border-bottom: 2px solid #444;
+      color: #fff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    }
+
+    main {
+      flex-grow: 1;
+      padding: 2rem;
+    }
+
+    h2 {
+      color: #a8d0ff;
+      margin-bottom: 1rem;
+    }
+
+    footer {
+      text-align: center;
+      padding: 1rem;
+      font-size: 0.85rem;
+      background-color: #1b1b2b;
+      color: #aaa;
+      border-top: 1px solid #333;
+    }
+
+    em {
+      font-style: normal;
+      color: #888;
+    }
+
+    .powered {
+      margin-top: 0.5rem;
+      color: #666;
+    }
+
+    a {
+      color: #77bbee;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <header>{{ project_name }}</header>
+  <main>
+    <h2>{{ title }}</h2>
+    {{ content }}
+  </main>
+  <footer>
+    <div><em>Rendered at {{ timestamp }}</em></div>
+    <div class="powered">Powered by <a href="https://github.com/OusmBlueNinja/Lumenite" target="_blank">Lumenite</a></div>
+  </footer>
+</body>
 </html>
+
 
 )");
 
@@ -659,7 +726,9 @@ plugins: []
 require("app.models")
 require("app.filters")
 require("app.middleware")
-require("app.routes")
+
+require("app.routes.web")
+require("app.routes.api")
 
 app:listen(8080)
 

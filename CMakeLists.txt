@@ -23,13 +23,25 @@ FetchContent_MakeAvailable(jsoncpp)
 
 set(BUILD_CURL_EXE OFF CACHE BOOL "Don't build curl executable" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "Don't build curl tests" FORCE)
-set(HTTP_ONLY ON CACHE BOOL "HTTP only" FORCE)
+set(HTTP_ONLY OFF CACHE BOOL "Enable HTTPS support" FORCE)
+
 set(ENABLE_IPV6 ON CACHE BOOL "Enable IPv6" FORCE)
 
 set(CURL_USE_LIBIDN2 OFF CACHE BOOL "Disable libidn2" FORCE)
 set(CURL_USE_LIBIDN OFF CACHE BOOL "Disable libidn" FORCE)
 
 set(CURL_USE_WIN32_IDN ON CACHE BOOL "Enable Win32 IDN (skip libidn2)" FORCE)
+
+
+FetchContent_Declare(
+        yamlcpp
+        GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+        GIT_TAG 0.8.0
+)
+
+set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "Disable yaml-cpp tests" FORCE)
+FetchContent_MakeAvailable(yamlcpp)
+
 
 FetchContent_Declare(
         curl
@@ -75,6 +87,8 @@ add_executable(lumenite
         src/utils/MimeDetector.h
         src/modules/ModuleBase.cpp
         src/modules/ModuleBase.h
+        src/utils/LumenitePackageManager.cpp
+        src/utils/LumenitePackageManager.h
 )
 
 target_include_directories(lumenite PRIVATE
@@ -90,6 +104,7 @@ target_link_libraries(lumenite PRIVATE
         sqlite3
         OpenSSL::SSL
         OpenSSL::Crypto
+        yaml-cpp
 )
 
 # if (MINGW)
@@ -97,5 +112,6 @@ target_link_libraries(lumenite PRIVATE
 # endif ()
 
 if (WIN32)
-    target_link_libraries(lumenite PRIVATE ws2_32 iphlpapi)
+    target_link_libraries(lumenite PRIVATE ws2_32 iphlpapi wininet)
 endif ()
+

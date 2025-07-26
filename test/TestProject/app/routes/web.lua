@@ -1,22 +1,17 @@
--- app/routes.lua
+-- app/routes/web.lua
 local crypto = require("lumenite.crypto")
 local models = require("app.models")
 
 --[[
-   Application Routes
+   Web Routes
 
-   Define your URL endpoints and route handlers here.
-   Routes map incoming requests to specific logic and responses.
+   Define routes that render HTML views or templates.
+   These are typically used for browser-facing endpoints.
 
-   This example defines a simple GET route for the homepage ("/")
-   that renders a template with dynamic values.
-
-   You can define more routes using:
+   You can define routes using:
      app:get(path, handler)
      app:post(path, handler)
-     app:json(path, handler)
 --]]
-
 
 app:get("/", function(request)
     return app.render_template("template.html", {
@@ -26,4 +21,3 @@ app:get("/", function(request)
         timestamp = os.date("!%Y-%m-%d %H:%M:%S UTC")
     })
 end)
-

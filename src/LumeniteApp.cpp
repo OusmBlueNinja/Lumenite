@@ -197,6 +197,9 @@ int LumeniteApp::loadScript(const std::string &path) const
         return 1;
     }
 
+
+    LumeniteModule::loadPluginsFromDirectory();
+
     lua_getglobal(L, "debug");
     lua_getfield(L, -1, "traceback");
     lua_remove(L, -2);
@@ -397,6 +400,7 @@ static int builtin_module_loader(lua_State *L)
     const char *mod = luaL_checkstring(L, 1);
     std::string from;
 
+
     // Native C modules
     if (strcmp(mod, "lumenite.db") == 0) {
         from = "builtin";
@@ -407,17 +411,21 @@ static int builtin_module_loader(lua_State *L)
     } else if (strcmp(mod, "lumenite.safe") == 0) {
         from = "builtin";
         lua_pushcfunction(L, LumeniteSafe::luaopen);
-    } else if (LumeniteModule::load(mod, L)) {
-        from = "builtin";
     }
+
+
+    if (LumeniteModule::load(mod, L)) {
+        return 1;
+    }
+
 
     if (!from.empty()) {
         return 1;
     }
 
-    // Fallback: search for Lua script
+    // Fallback: search for a Lua script
     std::string relPath = std::string(mod);
-    std::replace(relPath.begin(), relPath.end(), '.', '/'); // test.file → test/file
+    std::replace(relPath.begin(), relPath.end(), '.', '/');
 
     std::vector<std::string> searchPaths = {
         relPath + ".lua",
