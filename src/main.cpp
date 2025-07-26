@@ -4,6 +4,8 @@
 #include "ErrorHandler.h" // for colors
 #include <string>
 #include <iostream>
+#include "utils/LumenitePackageManager.h"
+
 
 static void printHelp()
 {
@@ -11,19 +13,27 @@ static void printHelp()
 Lumenite - Lightweight Lua+HTTP Server
 )" << RESET << R"(
 Usage:
-  lumenite              Run app.lua
-  lumenite <script>     Run specified Lua script
-  lumenite new <name>   Create a new project
+  lumenite                  Run app.lua
+  lumenite <script>         Run specified Lua script
+  lumenite new <name>       Create a new project
+  lumenite package <cmd>    Manage plugin packages
 
 Options:
-  -h, --help            Show this help message
-  -v, --version         Print Lumenite version
+  -h, --help                Show this help message
+  -v, --version             Print Lumenite version
+
+Package Commands:
+  lumenite package get <name>       Download a plugin from the registry
+  lumenite package remove <name>    Uninstall a plugin
+  lumenite package update <name>    Update a plugin
 
 Examples:
   lumenite app.lua
   lumenite new mysite
+  lumenite package get HelloPlugin
 )" << std::endl;
 }
+
 
 int main(int argc, char *argv[])
 {
@@ -46,6 +56,25 @@ int main(int argc, char *argv[])
 
             ProjectScaffolder scaffolder;
             scaffolder.createWorkspace(projectName, scaffoldArgs);
+            return 0;
+        }
+
+        if (arg1 == "package") {
+            if (argc < 3) {
+                std::cout << CYAN << "[~] Usage  : " << RESET << "lumenite package <command> <name>\n"
+                        << "Available commands:\n"
+                        << "  " << BOLD << "get <name>    " << RESET <<
+                        "Download and install a plugin from the registry\n"
+                        << "  " << BOLD << "remove <name> " << RESET << "Uninstall a plugin\n"
+                        << "  " << BOLD << "update <name> " << RESET << "Update a plugin to the latest version\n";
+                return 0;
+            }
+
+            std::vector<std::string> pkgArgs;
+            for (int i = 2; i < argc; ++i)
+                pkgArgs.emplace_back(argv[i]);
+
+            LumenitePackageManager::run(pkgArgs);
             return 0;
         }
 
@@ -73,3 +102,6 @@ int main(int argc, char *argv[])
     LumeniteApp app;
     return app.loadScript(scriptPath);
 }
+
+
+
