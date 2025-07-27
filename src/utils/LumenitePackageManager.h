@@ -30,7 +30,7 @@ private:
     static inline const std::string pluginDir = "./plugins/";
     static inline const std::string metadataFile = pluginDir + "modules.cpl";
     static inline const std::string registryURL =
-            "https://dock-it.dev/GigabiteHosting/Lumenite-Package-Manager/raw/branch/main/registry.json";
+            "http://192.168.0.13:3002/GigabiteHosting/Lumenite-Package-Manager/raw/branch/main/registry.json";
 
     static std::vector<InstalledPlugin> installed;
 
