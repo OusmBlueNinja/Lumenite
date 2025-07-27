@@ -108,6 +108,7 @@ void LumenitePackageManager::cmd_get(const std::string &name)
             log_error("Failed to download DLL for: " + pkg.name);
             return;
         }
+        std::cout << std::endl;
 
         for (const auto &[relPath, fileUrl]: pkg.files) {
             std::string fullPath = folder + relPath;
@@ -115,6 +116,7 @@ void LumenitePackageManager::cmd_get(const std::string &name)
                 log_warn("Failed to download: " + relPath);
             }
         }
+        std::cout << std::endl;
 
 
         markPluginInstalled(pkg.name, pkg.version, pkg.description);
@@ -357,7 +359,7 @@ bool LumenitePackageManager::downloadFile(const std::string &url, const std::str
     std::ostringstream sizeStr;
     std::ostringstream speedStr;
 
-    std::cout << CYAN << "[~] LPM:" << RESET << " ";
+    std::string lastOutput;
 
     while (InternetReadFile(hUrl, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
         out.write(buffer, bytesRead);
@@ -369,7 +371,7 @@ bool LumenitePackageManager::downloadFile(const std::string &url, const std::str
 
         std::string bar;
         for (int i = 0; i < barWidth; ++i)
-            bar += (i < filled ? "\033[32m#\033[0m" : "\033[90m-\033[0m");
+            bar += i < filled ? "\033[32m#\033[0m" : "\033[90m-\033[0m";
 
         if (contentLength >= 1024 * 1024)
             sizeStr.str(""), sizeStr << std::fixed << std::setprecision(2) << (contentLength / 1024.0 / 1024.0) <<
@@ -379,9 +381,8 @@ bool LumenitePackageManager::downloadFile(const std::string &url, const std::str
 
         auto now = std::chrono::steady_clock::now();
         double elapsed = std::chrono::duration<double>(now - start).count();
-        double speed = totalDownloaded / 1024.0 / elapsed;
 
-        if (speed > 1024.0)
+        if (double speed = totalDownloaded / 1024.0 / elapsed; speed > 1024.0)
             speedStr.str(""), speedStr << std::fixed << std::setprecision(2) << (speed / 1024.0) << " MB/s";
         else
             speedStr.str(""), speedStr << std::fixed << std::setprecision(1) << speed << " KB/s";
@@ -389,13 +390,16 @@ bool LumenitePackageManager::downloadFile(const std::string &url, const std::str
         std::ostringstream right;
         right << " " << GRAY << relPath << RESET;
 
-        std::cout << "\r        |" << bar << "| "
+        std::ostringstream output;
+        output << "\r        |" << bar << "| "
                 << std::setw(3) << YELLOW << percent << "%" << RESET
                 << " (" << MAGENTA << sizeStr.str() << " @ " << speedStr.str() << RESET << ")"
-                << std::setw(40) << std::right << right.str() << std::flush;
-    }
+                << std::setw(40) << std::right << right.str()
+                << std::string(20, ' ');
 
-    std::cout << "\n";
+        lastOutput = output.str();
+        std::cout << lastOutput << std::flush;
+    }
 
     InternetCloseHandle(hUrl);
     InternetCloseHandle(hInternet);
