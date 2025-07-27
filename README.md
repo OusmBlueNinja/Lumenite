@@ -23,7 +23,7 @@ embedded web tools.
 
 ---
 
-![img.png](.readme/Gif-cli.gif)
+![img.png](https://github.com/OusmBlueNinja/Lumenite/blob/main/.readme/Gif-cli.gif?raw=true)
 
 ## Prerequisites
 
@@ -61,7 +61,7 @@ Full documentation is available in the [Lumenite Wiki](https://dock-it.dev/Gigab
 ---
 
 ![img.png](.readme/cli.png)
-![img.png](https://github.com/OusmBlueNinja/Lumenite/blob/main/.readme/Gif-cli.gif?raw=true)
+![img.png](.readme/pkgmngr.png)
 
 ## License
 
