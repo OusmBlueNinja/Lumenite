@@ -14,20 +14,19 @@ private:
         std::string description;
         std::string version;
         std::string engine_version;
-        std::string url;
+        std::string dll_url;
+        std::vector<std::pair<std::string, std::string> > files;
+        std::vector<std::string> depends;
     };
 
     struct InstalledPlugin
     {
         std::string name;
         std::string version;
+        std::string description;
     };
 
-    static std::string http_get(const std::string &url);
-
-    static std::string http_download(const std::string &url, size_t &totalSizeOut);
-
-
+    static constexpr bool use_cache = false;;
     static inline const std::string pluginDir = "./plugins/";
     static inline const std::string metadataFile = pluginDir + "modules.cpl";
     static inline const std::string registryURL =
@@ -41,9 +40,13 @@ private:
 
     static void cmd_update(const std::string &name);
 
-    static void ensurePluginFolder();
+    static void cmd_list();
+
+    static std::string http_get(const std::string &url);
 
     static bool downloadFile(const std::string &url, const std::string &outPath);
+
+    static void ensurePluginFolder();
 
     static void loadYAML();
 
@@ -51,7 +54,8 @@ private:
 
     static bool isPluginInstalled(const std::string &name);
 
-    static void markPluginInstalled(const std::string &name, const std::string &version);
+    static void markPluginInstalled(const std::string &name, const std::string &version,
+                                    const std::string &description);
 
     static std::vector<AvailablePlugin> fetchRegistry();
 
@@ -62,11 +66,6 @@ private:
     static void log_warn(const std::string &msg);
 
     static void log_error(const std::string &msg);
-
-    static size_t curl_write_callback(char *ptr, size_t size, size_t nmemb, void *userdata);
-
-    static void show_progress(size_t downloaded, size_t total);
-
 
     static void log_notice(const std::string &msg, const std::string &advice);
 };
