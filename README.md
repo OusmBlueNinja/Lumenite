@@ -23,6 +23,8 @@ embedded web tools.
 
 ---
 
+![img.png](.readme/gif.gif)
+
 ## Prerequisites
 
 * CMake 3.16 or higher
@@ -60,6 +62,7 @@ Full documentation is available in the [Lumenite Wiki](https://dock-it.dev/Gigab
 
 ![img.png](.readme/cli.png)
 ![img.png](.readme/pkgmngr.png)
+
 ## License
 
 Creative Commons Attribution-ShareAlike 4.0 International
