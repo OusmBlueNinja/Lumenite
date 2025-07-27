@@ -3,7 +3,14 @@
 # Lumenite
 
 [![Star](https://img.shields.io/github/stars/OusmBlueNinja/Lumenite?style=)](https://github.com/OusmBlueNinja/Lumenite/stargazers)
+![Gitea Stars](https://img.shields.io/gitea/stars/GigabiteHosting/Lumenite?gitea_url=https%3A%2F%2Fdock-it.dev&style=flat)
+
+
 ![commits](https://img.shields.io/github/commit-activity/m/OusmBlueNinja/Lumenite)
+![Gitea Last Commit](https://img.shields.io/gitea/last-commit/GigabiteHosting/lumenite?gitea_url=https%3A%2F%2Fdock-it.dev%2F)
+
+![GitHub top language](https://img.shields.io/github/languages/top/OusmBlueNinja/LUMENITE)
+
 
 
 **Lumenite** is a blazing-fast, embeddable web server framework built in **C++** with a powerful **Lua scripting
