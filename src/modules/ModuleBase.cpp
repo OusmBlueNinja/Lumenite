@@ -26,7 +26,7 @@ inline void logLPM(const std::string &symbol, const std::string &message, const 
 
 static void logLPM_hint(const std::string &hint)
 {
-    std::cerr << "         " << CYAN << "↳ " << hint << RESET << std::endl;
+    std::cerr << "         " << CYAN << "-> " << hint << RESET << std::endl;
 }
 
 std::unordered_map<std::string, std::unique_ptr<LumeniteModule> > &LumeniteModule::registry()

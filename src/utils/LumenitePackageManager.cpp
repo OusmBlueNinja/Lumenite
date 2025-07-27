@@ -23,31 +23,31 @@ std::vector<LumenitePackageManager::InstalledPlugin> LumenitePackageManager::ins
 
 void LumenitePackageManager::log_info(const std::string &msg)
 {
-    std::cout << CYAN << "[~] LPM:" << RESET << " " << msg << "\n";
+    std::cout << WHITE << "[" << CYAN << "~" << WHITE << "]" << RESET << " LPM: " << msg << "\n";
 }
 
 void LumenitePackageManager::log_success(const std::string &msg)
 {
-    std::cout << GREEN << "[+] LPM:" << RESET << " " << msg << "\n";
+    std::cout << WHITE << "[" << GREEN << "+" << WHITE << "]" << RESET << " LPM: " << msg << "\n";
 }
 
 void LumenitePackageManager::log_warn(const std::string &msg)
 {
-    std::cout << YELLOW << "[!] LPM:" << RESET << " " << msg << "\n";
+    std::cout << WHITE << "[" << YELLOW << "!" << WHITE << "]" << RESET << " LPM: " << msg << "\n";
 }
 
 void LumenitePackageManager::log_error(const std::string &msg)
 {
-    std::cerr << RED << "[X] LPM:" << RESET << " " << msg << "\n";
+    std::cerr << WHITE << "[" << RED << "X" << WHITE << "]" << RESET << " LPM: " << msg << "\n";
 }
 
 void LumenitePackageManager::log_notice(const std::string &msg, const std::string &advice)
 {
-    std::cout << CYAN << "[~] Notice  : " << RESET << msg << "\n"
+    std::cout << WHITE << "[" << CYAN << "~" << WHITE << "]" << RESET << " Notice  : " << msg << "\n"
             << "             " << advice << "\n";
 }
 
-// ─── Core Entrypoint ─────────────────────────────────────────
+
 void LumenitePackageManager::run(const std::vector<std::string> &args)
 {
     if (args.empty()) {
@@ -74,7 +74,6 @@ void LumenitePackageManager::run(const std::vector<std::string> &args)
     saveYAML();
 }
 
-// ─── Command: Get ────────────────────────────────────────────
 void LumenitePackageManager::cmd_get(const std::string &name)
 {
     if (isPluginInstalled(name)) {
@@ -130,7 +129,6 @@ void LumenitePackageManager::cmd_get(const std::string &name)
     log_error("Plugin '" BOLD RED + name + RESET "' not found in registry.");
 }
 
-// ─── Command: Remove ─────────────────────────────────────────
 void LumenitePackageManager::cmd_remove(const std::string &name)
 {
     std::string path = pluginDir + name + "/";
@@ -142,7 +140,6 @@ void LumenitePackageManager::cmd_remove(const std::string &name)
     log_success("Removed plugin '" + name + "'");
 }
 
-// ─── Command: Update ─────────────────────────────────────────
 void LumenitePackageManager::cmd_update(const std::string &name)
 {
     for (const auto &pkg: fetchRegistry()) {
@@ -160,7 +157,6 @@ void LumenitePackageManager::cmd_update(const std::string &name)
     log_error("Plugin '" + name + "' not found in registry.");
 }
 
-// ─── Command: List ───────────────────────────────────────────
 void LumenitePackageManager::cmd_list()
 {
     if (installed.empty()) {
@@ -176,7 +172,6 @@ void LumenitePackageManager::cmd_list()
     }
 }
 
-// ─── File & YAML ─────────────────────────────────────────────
 void LumenitePackageManager::ensurePluginFolder()
 {
     if (!fs::exists(pluginDir)) fs::create_directories(pluginDir);
@@ -217,7 +212,6 @@ void LumenitePackageManager::saveYAML()
     fout << out.c_str();
 }
 
-// ─── Registry ────────────────────────────────────────────────
 std::vector<LumenitePackageManager::AvailablePlugin> LumenitePackageManager::fetchRegistry()
 {
     std::vector<AvailablePlugin> list;
@@ -262,7 +256,6 @@ std::vector<LumenitePackageManager::AvailablePlugin> LumenitePackageManager::fet
     return list;
 }
 
-// ─── Plugin State ────────────────────────────────────────────
 bool LumenitePackageManager::isPluginInstalled(const std::string &name)
 {
     return std::any_of(installed.begin(), installed.end(),
