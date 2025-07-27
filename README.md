@@ -23,7 +23,7 @@ embedded web tools.
 
 ---
 
-![img.png](.readme/gif.gif)
+![img.png](.readme/Gif-cli.gif)
 
 ## Prerequisites
 
