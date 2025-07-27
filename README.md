@@ -8,7 +8,6 @@
 ![GitHub top language](https://img.shields.io/github/languages/top/OusmBlueNinja/LUMENITE)
 ![Gitea Release](https://img.shields.io/gitea/v/release/GigabiteHosting/Lumenite?gitea_url=https%3A%2F%2Fdock-it.dev)
 
-
 **Lumenite** is a blazing-fast, embeddable web server framework built in **C++** with a powerful **Lua scripting
 interface**.
 It combines native performance with the flexibility of scripting — ideal for lightweight apps, admin panels, and
@@ -66,6 +65,9 @@ Full documentation is available in the [Lumenite Wiki](https://dock-it.dev/Gigab
 ---
 
 ![img.png](.readme/cli.png)
+
+---
+
 ![img.png](.readme/pkgmngr.png)
 
 ## License

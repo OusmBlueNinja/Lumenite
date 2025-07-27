@@ -401,7 +401,6 @@ static int builtin_module_loader(lua_State *L)
     std::string from;
 
 
-    // Native C modules
     if (strcmp(mod, "lumenite.db") == 0) {
         from = "builtin";
         lua_pushcfunction(L, luaopen_lumenite_db);
@@ -423,7 +422,6 @@ static int builtin_module_loader(lua_State *L)
         return 1;
     }
 
-    // Fallback: search for a Lua script
     std::string relPath = std::string(mod);
     std::replace(relPath.begin(), relPath.end(), '.', '/');
 
