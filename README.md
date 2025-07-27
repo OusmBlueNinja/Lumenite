@@ -3,6 +3,8 @@
 # Lumenite
 
 [![Star](https://img.shields.io/github/stars/OusmBlueNinja/Lumenite?style=)](https://github.com/OusmBlueNinja/Lumenite/stargazers)
+![commits](https://img.shields.io/github/commit-activity/m/OusmBlueNinja/Lumenite)
+
 
 **Lumenite** is a blazing-fast, embeddable web server framework built in **C++** with a powerful **Lua scripting
 interface**.
