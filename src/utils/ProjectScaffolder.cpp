@@ -700,7 +700,9 @@ return app
     createDir("vendor");
     createDir("static");
     createDir("static/javascript");
+    writeFile("static/javascript/index.js", R"()");
     createDir("static/styles");
+    writeFile("static/styles/style.css", R"()");
 
     createDir("plugins");
     writeFile("plugins/modules.cpl", R"(# Lumenite Plugins
