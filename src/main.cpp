@@ -102,6 +102,3 @@ int main(int argc, char *argv[])
     LumeniteApp app;
     return app.loadScript(scriptPath);
 }
-
-
-

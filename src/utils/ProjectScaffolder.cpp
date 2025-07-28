@@ -698,6 +698,9 @@ return app
     createDir("log");
     writeFile("log/latest.log", "Hello, World!");
     createDir("vendor");
+    createDir("static");
+    createDir("static/javascript");
+    createDir("static/styles");
 
     createDir("plugins");
     writeFile("plugins/modules.cpl", R"(# Lumenite Plugins
