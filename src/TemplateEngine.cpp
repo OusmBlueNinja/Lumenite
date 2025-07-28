@@ -10,6 +10,7 @@
 
 lua_State *TemplateEngine::luaState_ = nullptr;
 std::unordered_map<std::string, int> TemplateEngine::luaFilters_;
+TemplateValue TemplateEngine::globalContext_;
 
 
 TemplateEngine::Config TemplateEngine::config_;
@@ -17,12 +18,57 @@ std::mutex TemplateEngine::cacheMutex_;
 std::unordered_map<std::string, TemplateEngine::CacheEntry> TemplateEngine::templateCache_;
 std::unordered_map<std::string, TemplateEngine::CacheEntry> TemplateEngine::compiledCache_;
 
+
+void TemplateEngine::setGlobal(const std::string &key, const TemplateValue &val)
+{
+    if (!globalContext_.isMap()) {
+        globalContext_.value = TemplateMap{};
+    }
+
+    auto &map = std::get<TemplateMap>(globalContext_.value);
+    map[key] = val;
+}
+
+const TemplateValue &TemplateEngine::getGlobalContext()
+{
+    return globalContext_;
+}
+
+
+void TemplateEngine::clearGlobals()
+{
+    globalContext_.value = TemplateMap{};
+}
+
+
+TemplateValue mergeContext(const TemplateValue &local)
+{
+    TemplateValue merged;
+
+    TemplateMap mergedMap;
+
+    if (TemplateEngine::getGlobalContext().isMap()) {
+        mergedMap = TemplateEngine::getGlobalContext().asMap();
+    }
+
+    if (local.isMap()) {
+        for (const auto &[k, v]: local.asMap()) {
+            mergedMap[k] = v; // local overrides global
+        }
+    }
+
+    merged.value = std::move(mergedMap);
+    return merged;
+}
+
+
 void TemplateEngine::initialize(const Config &config)
 {
     config_ = config;
     if (!config_.templateDir.empty() && config_.templateDir.back() != '/')
         config_.templateDir += '/';
     clearCache();
+    clearGlobals();
 }
 
 void TemplateEngine::setTemplateDir(const std::string &dir)
@@ -56,8 +102,6 @@ void TemplateEngine::registerLuaFilter(const std::string &name, lua_State *L, in
     }
 }
 
-
-#include <regex>
 
 std::string TemplateEngine::renderFromString(const std::string &templateText,
                                              const TemplateValue &context)
