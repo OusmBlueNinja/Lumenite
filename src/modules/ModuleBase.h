@@ -26,11 +26,11 @@ class LumeniteModule
 public:
     virtual ~LumeniteModule() = default;
 
-    virtual const std::string &name() const = 0;
+    [[nodiscard]] virtual const std::string &name() const = 0;
 
     virtual int open(lua_State *L) = 0;
 
-    virtual int (*getLuaOpen() const)(lua_State *) = 0;
+    [[nodiscard]] virtual int (*getLuaOpen() const)(lua_State *) = 0;
 
     static void registerModule(std::unique_ptr<LumeniteModule> mod);
 

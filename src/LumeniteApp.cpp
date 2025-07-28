@@ -447,6 +447,8 @@ static int builtin_module_loader(lua_State *L)
     std::vector<std::string> searchPaths = {
         relPath + ".lua",
         "plugins/" + relPath + ".lua"
+        "vendor/" + relPath + ".lua"
+
     };
 
     for (const auto &path: searchPaths) {
