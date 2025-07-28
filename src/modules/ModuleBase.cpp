@@ -4,7 +4,6 @@
 #include <filesystem>
 
 
-
 #ifdef _WIN32
 #include <Windows.h>
 #else
@@ -79,23 +78,29 @@ void LumeniteModule::loadPluginsFromDirectory()
         return;
     }
 
-    for (const auto &entry: fs::directory_iterator(PLUGIN_DIR)) {
-        if (!entry.is_regular_file())
+    for (const auto &subdir: fs::directory_iterator(PLUGIN_DIR)) {
+        if (!subdir.is_directory())
             continue;
 
-        const std::string filename = entry.path().filename().string();
-        if (filename.rfind("lumenite_", 0) != 0)
-            continue;
-
-        std::string pluginName = filename.substr(strlen("lumenite_"));
-        pluginName = pluginName.substr(0, pluginName.find_last_of('.'));
+        std::string folderName = subdir.path().filename().string();
+        std::string expectedDllName = "lumenite_" + folderName;
 
 #ifdef _WIN32
-        if (entry.path().extension() != ".dll") continue;
+        expectedDllName += ".dll";
+#else
+        expectedDllName += ".so";
+#endif
 
-        std::wstring widePath = std::filesystem::absolute(entry.path()).wstring();
+        fs::path dllPath = subdir.path() / expectedDllName;
+        if (!fs::exists(dllPath) || !fs::is_regular_file(dllPath))
+            continue;
+
+        std::string pluginName = folderName;
+
+#ifdef _WIN32
+        std::wstring widePath = fs::absolute(dllPath).wstring();
         SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS);
-        AddDllDirectory(std::filesystem::absolute(PLUGIN_DIR).wstring().c_str());
+        AddDllDirectory(fs::absolute(PLUGIN_DIR).wstring().c_str());
 
         HMODULE lib = LoadLibraryExW(widePath.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
         if (!lib) {
@@ -108,17 +113,17 @@ void LumeniteModule::loadPluginsFromDirectory()
             continue;
         }
 
-        auto getMeta = reinterpret_cast<const LumenitePluginMeta *(*)()>(GetProcAddress(lib, "lumenite_get_pmeta"));
+        auto getMeta = reinterpret_cast<const LumenitePluginMeta *(*)()>(
+            GetProcAddress(lib, "lumenite_get_pmeta"));
 #else
-        if (entry.path().extension() != ".so") continue;
-
-        void *lib = dlopen(entry.path().c_str(), RTLD_NOW);
+        void *lib = dlopen(dllPath.c_str(), RTLD_NOW);
         if (!lib) {
             logLPM("!", "Failed to load plugin " + pluginName + ": " + dlerror());
             continue;
         }
 
-        auto getMeta = reinterpret_cast<const LumenitePluginMeta *(*)()>(dlsym(lib, "lumenite_get_pmeta"));
+        auto getMeta = reinterpret_cast<const LumenitePluginMeta *(*)()>(
+            dlsym(lib, "lumenite_get_pmeta"));
 #endif
 
         if (!getMeta) {
