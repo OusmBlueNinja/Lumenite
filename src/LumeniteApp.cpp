@@ -23,9 +23,11 @@
 
 bool running = false;
 
-int LumeniteApp::before_request_ref = LUA_NOREF;
-int LumeniteApp::after_request_ref = LUA_NOREF;
-int LumeniteApp::on_abort_ref = LUA_NOREF;
+std::vector<int> LumeniteApp::before_request_refs;
+std::vector<int> LumeniteApp::after_request_refs;
+std::unordered_map<int, int> LumeniteApp::on_abort_refs;
+
+
 bool LumeniteApp::listening = false;
 
 #ifdef _WIN32
@@ -297,6 +299,23 @@ static int lua_http_get(lua_State *L)
     return 1;
 }
 
+static int lua_app_on_error(lua_State *L)
+{
+    int arg_offset = 0;
+    if (lua_istable(L, 1)) {
+        arg_offset = 1;
+    }
+
+    int status = luaL_checkinteger(L, 1 + arg_offset);
+    luaL_checktype(L, 2 + arg_offset, LUA_TFUNCTION);
+
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    LumeniteApp::on_abort_refs[status] = ref;
+
+    return 0;
+}
+
+
 int LumeniteApp::lua_before_request(lua_State *L)
 {
     if (lua_gettop(L) != 1) {
@@ -307,12 +326,10 @@ int LumeniteApp::lua_before_request(lua_State *L)
         return luaL_error(L, "app.before_request expected a function like: app.before_request(function(req) ... end)");
     }
 
-    if (before_request_ref != LUA_NOREF) {
-        return luaL_error(L, "app.before_request has already been set. Only one before_request handler is allowed.");
-    }
-
     lua_pushvalue(L, 1);
-    before_request_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    before_request_refs.push_back(ref);
+
     return 0;
 }
 
@@ -327,12 +344,10 @@ int LumeniteApp::lua_after_request(lua_State *L)
             L, "app.after_request expected a function like: app.after_request(function(req, res) ... end)");
     }
 
-    if (after_request_ref != LUA_NOREF) {
-        return luaL_error(L, "app.after_request has already been set. Only one after_request handler is allowed.");
-    }
-
     lua_pushvalue(L, 1);
-    after_request_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    after_request_refs.push_back(ref);
+
     return 0;
 }
 
@@ -386,6 +401,9 @@ void LumeniteApp::exposeBindings()
 
     lua_pushcfunction(L, lua_abort);
     lua_setfield(L, -2, "abort");
+
+    lua_pushcfunction(L, lua_app_on_error);
+    lua_setfield(L, -2, "on_error");
 
 
     lua_pushcfunction(L, lua_listen);

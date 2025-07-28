@@ -24,9 +24,10 @@ public:
 
     int loadScript(const std::string &path) const;
 
-    static int before_request_ref;
-    static int after_request_ref;
-    static int on_abort_ref;
+    static std::vector<int> before_request_refs;
+    static std::vector<int> after_request_refs;
+    static std::unordered_map<int, int> on_abort_refs;
+
 
     static bool listening;
 
