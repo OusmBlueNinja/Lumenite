@@ -125,6 +125,13 @@ public:
     // Helpers
     static std::optional<TemplateValue> resolve(const TemplateValue &ctx, const std::string &keyPath);
 
+    static const TemplateValue &getGlobalContext();
+
+
+    static void setGlobal(const std::string &key, const TemplateValue &val);
+
+    static void clearGlobals();
+
 private:
     // Lua filters
     static lua_State *luaState_;
@@ -135,6 +142,9 @@ private:
     static std::mutex cacheMutex_;
     static std::unordered_map<std::string, CacheEntry> templateCache_;
     static std::unordered_map<std::string, CacheEntry> compiledCache_;
+
+    static TemplateValue globalContext_;
+
 
     // Internal processing
     static std::string processIncludes(const std::string &text, std::vector<std::string> &includeStack);

@@ -3,11 +3,10 @@
 #include <iostream>
 #include <cstdio>
 
-#define LUMENITE_RELEASE_VERSION "2025.2"
+#define LUMENITE_RELEASE_VERSION "2025.5"
 #define LUMENITE_BUILD_DATE __DATE__  // "Jul 22 2025"
 #define LUMENITE_BUILD_TIME __TIME__  // "19:03:04"
 
-// Month abbreviation → 2-digit number
 inline std::string getLumeniteMonthNumber(const std::string &mon)
 {
     if (mon == "Jan") return "01";

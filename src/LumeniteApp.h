@@ -4,7 +4,7 @@
 #include "Router.h"
 #include "SessionManager.h"
 #include "json/value.h"
-
+#define PKG_MNGR_NAME "LPM"
 
 extern "C"
 {
@@ -13,6 +13,7 @@ extern "C"
 #include "lualib.h"
 }
 
+static void raise_http_abort(lua_State *L, int status);
 
 class LumeniteApp
 {
@@ -23,8 +24,12 @@ public:
 
     int loadScript(const std::string &path) const;
 
-    static int before_request_ref;
-    static int after_request_ref;
+    static std::vector<int> before_request_refs;
+    static std::vector<int> after_request_refs;
+    static std::unordered_map<int, int> on_abort_refs;
+
+
+    static bool listening;
 
 private:
     lua_State *L;
@@ -48,6 +53,8 @@ private:
 
     static int lua_json(lua_State *L);
 
+    static int lua_send_file(lua_State *L);
+
     static int lua_jsonify(lua_State *L);
 
     static int lua_from_json(lua_State *L);
@@ -61,6 +68,8 @@ private:
     static int lua_before_request(lua_State *L);
 
     static int lua_after_request(lua_State *L);
+
+    static int lua_abort(lua_State *L);
 
     static int lua_listen(lua_State *L);
 };

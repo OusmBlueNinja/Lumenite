@@ -16,13 +16,19 @@
 #include "modules/LumeniteCrypto.h"
 #include "modules/LumeniteDb.h"
 #include "modules/LumeniteSafe.h"
+#include "modules/ModuleBase.h"
+
+#include "utils/MimeDetector.h"
 
 
 bool running = false;
 
-int LumeniteApp::before_request_ref = LUA_NOREF;
-int LumeniteApp::after_request_ref = LUA_NOREF;
+std::vector<int> LumeniteApp::before_request_refs;
+std::vector<int> LumeniteApp::after_request_refs;
+std::unordered_map<int, int> LumeniteApp::on_abort_refs;
 
+
+bool LumeniteApp::listening = false;
 
 #ifdef _WIN32
 #include <windows.h>
@@ -46,6 +52,25 @@ static size_t WriteCallback(void *contents, const size_t size, size_t nmemb, std
     const size_t totalSize = size * nmemb;
     output->append(static_cast<char *>(contents), totalSize);
     return totalSize;
+}
+
+// Create the abort call to the C++ backend to trigger the server raise
+void raise_http_abort(lua_State *L, int status, const std::string &message = "")
+{
+    lua_newtable(L);
+
+    lua_pushinteger(L, status);
+    lua_setfield(L, -2, "status");
+
+    if (!message.empty()) {
+        lua_pushlstring(L, message.c_str(), message.size());
+        lua_setfield(L, -2, "message");
+    }
+
+    lua_pushliteral(L, "__LUMENITE_ABORT__");
+    lua_setfield(L, -2, "__kind");
+
+    lua_error(L);
 }
 
 
@@ -174,6 +199,9 @@ int LumeniteApp::loadScript(const std::string &path) const
         return 1;
     }
 
+
+    LumeniteModule::loadPluginsFromDirectory();
+
     lua_getglobal(L, "debug");
     lua_getfield(L, -1, "traceback");
     lua_remove(L, -2);
@@ -271,6 +299,23 @@ static int lua_http_get(lua_State *L)
     return 1;
 }
 
+static int lua_app_on_error(lua_State *L)
+{
+    int arg_offset = 0;
+    if (lua_istable(L, 1)) {
+        arg_offset = 1;
+    }
+
+    int status = luaL_checkinteger(L, 1 + arg_offset);
+    luaL_checktype(L, 2 + arg_offset, LUA_TFUNCTION);
+
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    LumeniteApp::on_abort_refs[status] = ref;
+
+    return 0;
+}
+
+
 int LumeniteApp::lua_before_request(lua_State *L)
 {
     if (lua_gettop(L) != 1) {
@@ -281,12 +326,10 @@ int LumeniteApp::lua_before_request(lua_State *L)
         return luaL_error(L, "app.before_request expected a function like: app.before_request(function(req) ... end)");
     }
 
-    if (before_request_ref != LUA_NOREF) {
-        return luaL_error(L, "app.before_request has already been set. Only one before_request handler is allowed.");
-    }
-
     lua_pushvalue(L, 1);
-    before_request_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    before_request_refs.push_back(ref);
+
     return 0;
 }
 
@@ -301,12 +344,10 @@ int LumeniteApp::lua_after_request(lua_State *L)
             L, "app.after_request expected a function like: app.after_request(function(req, res) ... end)");
     }
 
-    if (after_request_ref != LUA_NOREF) {
-        return luaL_error(L, "app.after_request has already been set. Only one after_request handler is allowed.");
-    }
-
     lua_pushvalue(L, 1);
-    after_request_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    after_request_refs.push_back(ref);
+
     return 0;
 }
 
@@ -333,6 +374,9 @@ void LumeniteApp::exposeBindings()
     lua_pushcfunction(L, lua_http_get);
     lua_setfield(L, -2, "http_get");
 
+    lua_pushcfunction(L, lua_send_file);
+    lua_setfield(L, -2, "send_file");
+
 
     lua_pushcfunction(L, lua_json);
     lua_setfield(L, -2, "json");
@@ -355,6 +399,12 @@ void LumeniteApp::exposeBindings()
     lua_pushcfunction(L, lua_after_request);
     lua_setfield(L, -2, "after_request");
 
+    lua_pushcfunction(L, lua_abort);
+    lua_setfield(L, -2, "abort");
+
+    lua_pushcfunction(L, lua_app_on_error);
+    lua_setfield(L, -2, "on_error");
+
 
     lua_pushcfunction(L, lua_listen);
     lua_setfield(L, -2, "listen");
@@ -366,54 +416,76 @@ void LumeniteApp::exposeBindings()
 static int builtin_module_loader(lua_State *L)
 {
     const char *mod = luaL_checkstring(L, 1);
+    std::string from;
 
-    if (strcmp(mod, "LumeniteDB") == 0) {
-        lua_pushcfunction(L, luaopen_LumeniteDB);
-        return 1;
-    }
 
-    if (strcmp(mod, "LumeniteCrypto") == 0) {
+    if (strcmp(mod, "lumenite.db") == 0) {
+        from = "builtin";
+        lua_pushcfunction(L, luaopen_lumenite_db);
+    } else if (strcmp(mod, "lumenite.crypto") == 0) {
+        from = "builtin";
         lua_pushcfunction(L, LumeniteCrypto::luaopen);
-        return 1;
-    }
-
-    if (strcmp(mod, "LumeniteSafe") == 0) {
+    } else if (strcmp(mod, "lumenite.safe") == 0) {
+        from = "builtin";
         lua_pushcfunction(L, LumeniteSafe::luaopen);
+    }
+
+
+    if (LumeniteModule::load(mod, L)) {
         return 1;
     }
 
-    //if (strcmp(mod, "test") == 0) {
-    //    lua_pushcfunction(L, luaopen_test);
-    //    return 1;
-    //}
 
+    if (!from.empty()) {
+        return 1;
+    }
+
+    std::string relPath = std::string(mod);
+    std::replace(relPath.begin(), relPath.end(), '.', '/');
+
+    std::vector<std::string> searchPaths = {
+        relPath + ".lua",
+        "plugins/" + relPath + ".lua"
+    };
+
+    for (const auto &path: searchPaths) {
+        std::ifstream file(path);
+        if (file.good()) {
+            if (luaL_loadfile(L, path.c_str()) != LUA_OK) {
+                lua_pushnil(L);
+                lua_insert(L, -2);
+                return 2;
+            }
+
+            return 1;
+        }
+    }
+
+    // Not found
     lua_pushnil(L);
-    lua_pushfstring(L, "[Lumenite] Invalid module '%s'.", mod);
+    lua_pushfstring(L, "[" PKG_MNGR_NAME "] No module found for '%s'", mod);
     return 2;
 }
 
-// ------------------------
-// Register custom searcher
-// ------------------------
+
 void LumeniteApp::injectBuiltins()
 {
     lua_getglobal(L, "package");
-    lua_getfield(L, -1, "searchers");
+    lua_newtable(L); // New searchers table
 
+    // Add our own single custom loader
     lua_pushcfunction(L, builtin_module_loader);
-    for (int i = static_cast<int>(lua_rawlen(L, -1)) + 1; i > 1; --i) {
-        lua_rawgeti(L, -1, i - 1);
-        lua_rawseti(L, -2, i);
-    }
-    lua_rawseti(L, -2, 1);
+    lua_rawseti(L, -2, 1); // package.searchers[1] = builtin_module_loader
 
-    lua_pop(L, 2);
+    lua_setfield(L, -2, "searchers"); // package.searchers = {...}
+    lua_pop(L, 1); // pop package
 }
+
 
 // ————— Route Arg Helper —————
 static bool extract_route_args(lua_State *L, const char *name, std::string &outPath, int &outHandlerIdx)
 {
-    int n = lua_gettop(L);
+    const int n = lua_gettop(L);
     if (n == 2 && lua_isstring(L, 1) && lua_isfunction(L, 2)) {
         outPath = lua_tostring(L, 1);
         outHandlerIdx = 2;
@@ -424,9 +496,35 @@ static bool extract_route_args(lua_State *L, const char *name, std::string &outP
         outHandlerIdx = 3;
         return true;
     }
-    luaL_error(L, "%s(path, handler) or %s:path(handler) expected", name, name);
+    luaL_error(L, "%s(path, handler) expected", name);
     return false;
 }
+
+
+int LumeniteApp::lua_abort(lua_State *L)
+{
+    if (!listening) {
+        return luaL_error(L, "app.abort() requires app to be listening; app:listen(port)");
+    }
+
+
+    const lua_Integer status = luaL_checkinteger(L, 1);
+
+    if (status < 100 || status > 599) {
+        return luaL_error(L, "abort(status): status code must be between 100 and 599");
+    }
+
+    std::string message;
+    if (lua_gettop(L) >= 2 && lua_isstring(L, 2)) {
+        size_t len;
+        const char *msg = lua_tolstring(L, 2, &len);
+        message.assign(msg, len);
+    }
+
+    raise_http_abort(L, static_cast<int>(status), message);
+    return 0;
+}
+
 
 // ————— Route Handlers —————
 int LumeniteApp::lua_route_get(lua_State *L)
@@ -502,6 +600,97 @@ int LumeniteApp::lua_json(lua_State *L)
     }
 
     json_to_lua(L, root);
+    return 1;
+}
+
+
+int LumeniteApp::lua_send_file(lua_State *L)
+{
+    const std::string path = luaL_checkstring(L, 1);
+
+    bool as_attachment = false;
+    std::string download_name;
+    std::string content_type;
+    std::unordered_map<std::string, std::string> extra_headers;
+    int status = 200;
+
+    if (lua_istable(L, 2)) {
+        lua_getfield(L, 2, "as_attachment");
+        if (lua_isboolean(L, -1)) as_attachment = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "download_name");
+        if (lua_isstring(L, -1)) download_name = lua_tostring(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "content_type");
+        if (lua_isstring(L, -1)) content_type = lua_tostring(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "status");
+        if (lua_isinteger(L, -1)) status = static_cast<int>(lua_tointeger(L, -1));
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "headers");
+        if (lua_istable(L, -1)) {
+            lua_pushnil(L);
+            while (lua_next(L, -2)) {
+                if (lua_isstring(L, -2) && lua_isstring(L, -1)) {
+                    extra_headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                }
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1); // pop headers
+    }
+
+    // Read a file
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        raise_http_abort(L, 404, "File not found: " + path);
+        luaL_error(L, "send_file: File not found: %s", path.c_str());
+        return 0;
+    }
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    std::string body = buffer.str();
+
+    if (content_type.empty()) {
+        content_type = MimeDetector::toString(
+            MimeDetector::detect(reinterpret_cast<const uint8_t *>(body.data()), body.size(), path)
+        );
+    }
+
+    std::string disposition = as_attachment ? "attachment" : "inline";
+    if (!download_name.empty()) {
+        disposition += "; filename=\"" + download_name + "\"";
+    }
+
+    // Build response
+    lua_newtable(L);
+
+    lua_pushinteger(L, status);
+    lua_setfield(L, -2, "status");
+
+    lua_pushstring(L, body.c_str());
+    lua_setfield(L, -2, "body");
+
+    lua_newtable(L);
+    lua_pushstring(L, content_type.c_str());
+    lua_setfield(L, -2, "Content-Type");
+
+    lua_pushstring(L, disposition.c_str());
+    lua_setfield(L, -2, "Content-Disposition");
+
+    // Merge custom headers
+    for (const auto &[key, val]: extra_headers) {
+        lua_pushstring(L, val.c_str());
+        lua_setfield(L, -2, key.c_str());
+    }
+
+    lua_setfield(L, -2, "headers");
+
     return 1;
 }
 
@@ -639,6 +828,7 @@ int LumeniteApp::lua_listen(lua_State *L)
     else return luaL_error(L, "expected an integer port as argument");
 
     Server srv(port, L);
+    listening = true;
     srv.run();
     return 0;
 }

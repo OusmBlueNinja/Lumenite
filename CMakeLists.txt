@@ -4,55 +4,72 @@ project(Lumenite LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+
 include(FetchContent)
 
-# ----------------- jsoncpp (STATIC) -----------------
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
+
+
 FetchContent_Declare(
         jsoncpp
         GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
         GIT_TAG 1.9.5
 )
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
+
 set(JSONCPP_WITH_TESTS OFF CACHE BOOL "Disable jsoncpp tests" FORCE)
 FetchContent_MakeAvailable(jsoncpp)
 
-# ----------------- curl (STATIC) -----------------
+
+set(BUILD_CURL_EXE OFF CACHE BOOL "Don't build curl executable" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "Don't build curl tests" FORCE)
+set(HTTP_ONLY OFF CACHE BOOL "Enable HTTPS support" FORCE)
+
+set(ENABLE_IPV6 ON CACHE BOOL "Enable IPv6" FORCE)
+
+set(CURL_USE_LIBIDN2 OFF CACHE BOOL "Disable libidn2" FORCE)
+set(CURL_USE_LIBIDN OFF CACHE BOOL "Disable libidn" FORCE)
+
+set(CURL_USE_WIN32_IDN ON CACHE BOOL "Enable Win32 IDN (skip libidn2)" FORCE)
+
+
+FetchContent_Declare(
+        yamlcpp
+        GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+        GIT_TAG 0.8.0
+)
+
+set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "Disable yaml-cpp tests" FORCE)
+FetchContent_MakeAvailable(yamlcpp)
+
+
 FetchContent_Declare(
         curl
         GIT_REPOSITORY https://github.com/curl/curl.git
         GIT_TAG curl-8_7_1
 )
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
-set(BUILD_CURL_EXE OFF CACHE BOOL "Don't build curl executable" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "Don't build tests" FORCE)
-set(HTTP_ONLY ON CACHE BOOL "HTTP only" FORCE)
 FetchContent_MakeAvailable(curl)
 
-# ----------------- sqlite3 (STATIC) -----------------
+
 FetchContent_Declare(
         sqlite3
         URL https://www.sqlite.org/2024/sqlite-amalgamation-3450100.zip
 )
 FetchContent_MakeAvailable(sqlite3)
 
-add_library(sqlite3 STATIC
-        ${sqlite3_SOURCE_DIR}/sqlite3.c
-)
+add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
 target_include_directories(sqlite3 PUBLIC ${sqlite3_SOURCE_DIR})
 
-# ----------------- Lua -----------------
 file(GLOB LUA_SRC CONFIGURE_DEPENDS vendor/lua/*.c)
 add_library(lua_static STATIC ${LUA_SRC})
 target_include_directories(lua_static PUBLIC vendor/lua)
 
-# ----------------- OpenSSL -----------------
 if (MINGW)
     set(OPENSSL_ROOT_DIR "C:/msys64/mingw64")
     set(OPENSSL_USE_STATIC_LIBS TRUE)
 endif ()
 find_package(OpenSSL REQUIRED)
 
-# ----------------- Lumenite Executable -----------------
 add_executable(lumenite
         src/main.cpp
         src/LumeniteApp.cpp src/LumeniteApp.h
@@ -66,6 +83,12 @@ add_executable(lumenite
         src/modules/LumeniteSafe.cpp src/modules/LumeniteSafe.h
         src/utils/ProjectScaffolder.cpp src/utils/ProjectScaffolder.h
         src/utils/Version.h
+        src/utils/MimeDetector.cpp
+        src/utils/MimeDetector.h
+        src/modules/ModuleBase.cpp
+        src/modules/ModuleBase.h
+        src/utils/LumenitePackageManager.cpp
+        src/utils/LumenitePackageManager.h
 )
 
 target_include_directories(lumenite PRIVATE
@@ -81,12 +104,14 @@ target_link_libraries(lumenite PRIVATE
         sqlite3
         OpenSSL::SSL
         OpenSSL::Crypto
+        yaml-cpp
 )
 
-if (MINGW)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static -pthread")
-endif ()
+# if (MINGW)
+#     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static -pthread")
+# endif ()
 
 if (WIN32)
-    target_link_libraries(lumenite PRIVATE ws2_32 iphlpapi)
+    target_link_libraries(lumenite PRIVATE ws2_32 iphlpapi wininet)
 endif ()
+
