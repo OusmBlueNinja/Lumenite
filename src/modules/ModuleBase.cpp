@@ -10,11 +10,120 @@
 #include <dlfcn.h>
 #endif
 
+
+#include <vector>
+#include <string>
+#include <fstream>
+
+
 #define ENGINE_VERSION "2025.5"
 #define PKG_MNGR_NAME "LPM"
 
 namespace fs = std::filesystem;
 static const fs::path PLUGIN_DIR = "plugins";
+
+#ifdef _WIN32
+
+std::vector<std::string> get_imported_dlls(const std::wstring &dll_path)
+{
+    std::vector<std::string> dlls;
+
+    std::ifstream file(dll_path.c_str(), std::ios::binary);
+    if (!file) {
+        std::wcerr << L"[X] Could not open file: " << dll_path << std::endl;
+        return dlls;
+    }
+
+    file.seekg(0, std::ios::end);
+    const std::streamsize size = file.tellg();
+    if (size < sizeof(IMAGE_DOS_HEADER)) {
+        std::wcerr << L"[X] File too small to be a valid DLL." << std::endl;
+        return dlls;
+    }
+    file.seekg(0, std::ios::beg);
+
+    std::vector<char> buffer(static_cast<size_t>(size));
+    file.read(buffer.data(), size);
+
+    auto dos = reinterpret_cast<PIMAGE_DOS_HEADER>(buffer.data());
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
+        std::wcerr << L"[X] Not a valid PE file (missing MZ)." << std::endl;
+        return dlls;
+    }
+
+    auto nt = reinterpret_cast<PIMAGE_NT_HEADERS>(buffer.data() + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) {
+        std::wcerr << L"[X] Not a valid NT header (missing PE)." << std::endl;
+        return dlls;
+    }
+
+    const DWORD import_rva = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    if (!import_rva) {
+        std::wcout << L"[~] No import table found." << std::endl;
+        return dlls;
+    }
+
+    auto section = IMAGE_FIRST_SECTION(nt);
+    DWORD import_offset = 0;
+
+    for (int i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section) {
+        const DWORD sec_va = section->VirtualAddress;
+        if (const DWORD sec_size = section->Misc.VirtualSize; import_rva >= sec_va && import_rva < sec_va + sec_size) {
+            import_offset = section->PointerToRawData + (import_rva - sec_va);
+            break;
+        }
+    }
+
+    if (!import_offset) {
+        std::wcerr << L"[X] Could not map import directory to file offset." << std::endl;
+        return dlls;
+    }
+
+    auto imp_desc = reinterpret_cast<PIMAGE_IMPORT_DESCRIPTOR>(buffer.data() + import_offset);
+    while (imp_desc->Name) {
+        const DWORD name_rva = imp_desc->Name;
+
+        std::string dll_name;
+        for (int i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+            section = IMAGE_FIRST_SECTION(nt) + i;
+            const DWORD sec_va = section->VirtualAddress;
+            if (const DWORD sec_size = section->Misc.VirtualSize; name_rva >= sec_va && name_rva < sec_va + sec_size) {
+                const DWORD name_offset = section->PointerToRawData + (name_rva - sec_va);
+                dll_name = std::string(buffer.data() + name_offset);
+                break;
+            }
+        }
+
+        if (!dll_name.empty())
+            dlls.push_back(dll_name);
+
+        ++imp_desc;
+    }
+
+    return dlls;
+}
+
+std::vector<std::string> check_dependencies(const std::wstring &dll_path)
+{
+    std::vector<std::string> deps;
+
+    for (const auto dep = get_imported_dlls(dll_path); const auto &it: dep) {
+        if (const HMODULE h = LoadLibraryA(it.c_str())) {
+            FreeLibrary(h);
+        } else {
+            deps.push_back(it);
+        }
+    }
+    return deps;
+}
+#else
+#message Windows only
+std::vector<std::string> check_dependencies(const std::wstring &dll_path)
+{
+    std::vector<std::string> deps;
+    return deps;
+}
+#endif
 
 inline void logLPM(const std::string &symbol, const std::string &message, const char *color = WHITE)
 {
@@ -23,10 +132,6 @@ inline void logLPM(const std::string &symbol, const std::string &message, const 
             << message << std::endl;
 }
 
-static void logLPM_hint(const std::string &hint)
-{
-    std::cerr << "         " << CYAN << "-> " << hint << RESET << std::endl;
-}
 
 std::unordered_map<std::string, std::unique_ptr<LumeniteModule> > &LumeniteModule::registry()
 {
@@ -60,9 +165,9 @@ public:
     {
     }
 
-    const std::string &name() const override { return _name; }
+    [[nodiscard]] const std::string &name() const override { return _name; }
     int open(lua_State *L) override { return _luaopen(L); }
-    int (*getLuaOpen() const)(lua_State *) override { return _luaopen; }
+    [[nodiscard]] int (*getLuaOpen() const)(lua_State *) override { return _luaopen; }
 
 private:
     std::string _name;
@@ -95,23 +200,46 @@ void LumeniteModule::loadPluginsFromDirectory()
         if (!fs::exists(dllPath) || !fs::is_regular_file(dllPath))
             continue;
 
-        std::string pluginName = folderName;
+        const std::string &pluginName = folderName;
 
 #ifdef _WIN32
         std::wstring widePath = fs::absolute(dllPath).wstring();
         SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS);
         AddDllDirectory(fs::absolute(PLUGIN_DIR).wstring().c_str());
-
+        std::vector<std::string> missing_dlls = check_dependencies(widePath);
         HMODULE lib = LoadLibraryExW(widePath.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+
         if (!lib) {
-            DWORD errCode = GetLastError();
+            const DWORD errCode = GetLastError();
             LPSTR msg = nullptr;
-            FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, nullptr, errCode, 0,
-                           (LPSTR) &msg, 0, nullptr);
-            logLPM("!", "Failed to load plugin " + pluginName + ":\n         " + (msg ? msg : "Unknown error"));
+            FormatMessageA(
+                FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+                nullptr,
+                errCode,
+                0,
+                reinterpret_cast<LPSTR>(&msg),
+                0,
+                nullptr
+            );
+            logLPM("!", "Failed to load plugin: " BLUE + pluginName + RESET, BOLD RED);
+            std::string cleanMsg = (msg ? msg : "Unknown error");
+            while (!cleanMsg.empty() && (cleanMsg.back() == '\n' || cleanMsg.back() == '\r')) {
+                cleanMsg.pop_back();
+            }
+
+            logLPM("!", std::string("Reason: ") + YELLOW + cleanMsg + RESET);
+
+            if (!missing_dlls.empty()) {
+                logLPM("!", "Missing DLL dependencies:");
+                for (const auto &dep: missing_dlls) {
+                    logLPM("?", "  - " GREEN + dep + RESET);
+                }
+            }
+
             if (msg) LocalFree(msg);
             continue;
         }
+
 
         auto getMeta = reinterpret_cast<const LumenitePluginMeta *(*)()>(
             GetProcAddress(lib, "lumenite_get_pmeta"));
@@ -166,6 +294,6 @@ void LumeniteModule::loadPluginsFromDirectory()
             safeVersion = safeVersion.substr(1, safeVersion.size() - 2);
 
         registerModule(std::make_unique<LumeniteDynamicModule>(safeName, safeVersion, meta->luaopen));
-        logLPM("+", "Plugin \"" + safeName + "\" loaded successfully  [" + safeVersion + "]", GREEN);
+        logLPM("+", "Plugin \"" + safeName + "\" loaded successfully  [" += safeVersion + "]", GREEN);
     }
 }

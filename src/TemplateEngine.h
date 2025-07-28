@@ -90,6 +90,7 @@ public:
         std::string content;
         std::chrono::steady_clock::time_point lastModified;
         bool isValid = true;
+        size_t size_bytes = 0;
     };
 
     struct Config

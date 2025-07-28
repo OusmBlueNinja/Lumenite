@@ -107,9 +107,9 @@ target_link_libraries(lumenite PRIVATE
         yaml-cpp
 )
 
-# if (MINGW)
-#     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static -pthread")
-# endif ()
+if (MINGW)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -static -pthread")
+endif ()
 
 if (WIN32)
     target_link_libraries(lumenite PRIVATE ws2_32 iphlpapi wininet)

@@ -1,4 +1,5 @@
 #include "ProjectScaffolder.h"
+#include "../ErrorHandler.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -6,27 +7,8 @@
 #include "Version.h"
 namespace fs = std::filesystem;
 
-// Color codes
-#define RESET     "\033[0m"
-#define BOLD      "\033[1m"
-#define DIM       "\033[2m"
-#define GREEN     "\033[32m"
-#define BLUE      "\033[34m"
-#define CYAN      "\033[36m"
-#define MAGENTA   "\033[35m"
-#define YELLOW    "\033[33m"
-#define RED       "\033[31m"
-#define GRAY      "\033[38;5;240m"
-#define PURPLE    "\033[38;5;99m"
-#define LBLUE     "\033[38;5;81m"
-#define LGREEN    "\033[38;5;120m"
-#define MOON1     "\033[38;5;141m"
-#define MOON2     "\033[38;5;135m"
-#define MOON4     "\033[38;5;63m"
-#define MOON5     "\033[38;5;111m"
-#define MOON6     "\033[38;5;250m"
 
-std::string ProjectScaffolder::colorizePath(const std::string &pathStr, const std::string &projectName)
+std::string ProjectScaffolder::colorizePath(const std::string &pathStr, const std::string &projectName) const
 {
     fs::path path(pathStr);
     std::ostringstream out;
@@ -45,9 +27,8 @@ std::string ProjectScaffolder::colorizePath(const std::string &pathStr, const st
         else
             first = false;
 
-        // Decide color based on path type
         if (partStr == projectName) {
-            out << CYAN << BOLD << partStr << RESET;
+            out << MAGENTA << BOLD << partStr << RESET;
         } else if (fs::exists(absolute) && fs::is_directory(absolute)) {
             out << LBLUE << partStr << RESET; // folder
         } else {
@@ -59,24 +40,24 @@ std::string ProjectScaffolder::colorizePath(const std::string &pathStr, const st
 }
 
 
-void ProjectScaffolder::log(const std::string &action, const std::string &text)
+void ProjectScaffolder::log(const std::string &action, const std::string &text) const
 {
-    std::string prefix = "[+] ";
+    std::string prefix = RESET "[" GREEN "+" RESET"] ";
     std::string color;
 
-    if (action == "Created") { color = BOLD GREEN; } else if (action == "Wrote") { color = BOLD BLUE; } else if (
-        action == "Skipped") {
+    if (action == "Created") {
+        color = BOLD GREEN;
+    } else if (action == "Wrote") {
+        color = BOLD BLUE;
+    } else if (action == "Skipped" || action == "Warning") {
         color = YELLOW;
-        prefix = "[!] ";
-    } else if (action == "Warning") {
-        color = YELLOW;
-        prefix = "[!] ";
+        prefix = RESET "[" YELLOW "!" RESET"] ";
     } else if (action == "Note") {
         color = CYAN;
-        prefix = "[~] ";
+        prefix = RESET "[" CYAN "~" RESET"] ";
     } else if (action == "Error") {
         color = BOLD RED;
-        prefix = "[x] ";
+        prefix = RESET "[" BOLD RED "x" RESET"] ";
     } else {
         color = RESET;
     }
@@ -86,7 +67,6 @@ void ProjectScaffolder::log(const std::string &action, const std::string &text)
 
     std::cout << prefix << color << aligned.str() << ":" << RESET << " ";
 
-    // For path-related actions, use colorized path
     if (action == "Created" || action == "Wrote" || action == "Skipped")
         std::cout << colorizePath(text, projectName);
     else
@@ -96,18 +76,18 @@ void ProjectScaffolder::log(const std::string &action, const std::string &text)
 }
 
 
-void ProjectScaffolder::createDir(const fs::path &relPath)
+void ProjectScaffolder::createDir(const fs::path &path) const
 {
-    fs::path full = rootPath / relPath;
+    const fs::path full = rootPath / path;
 
     if (fs::exists(full)) {
         if (deleteExisting) {
             std::error_code ec;
             fs::remove_all(full, ec);
             if (!ec) {
-                log("Deleted", relPath.string());
+                log("Deleted", path.string());
                 fs::create_directories(full);
-                log("Created", relPath.string());
+                log("Created", path.string());
             } else {
                 log("Error", "Failed to delete directory: " + ec.message());
             }
@@ -115,39 +95,38 @@ void ProjectScaffolder::createDir(const fs::path &relPath)
         }
 
         if (!force) {
-            log("Skipped", relPath.string());
+            log("Skipped", path.string());
             return;
         }
     }
 
     fs::create_directories(full);
-    log("Created", relPath.string());
+    log("Created", path.string());
 }
 
-void ProjectScaffolder::writeFile(const fs::path &relPath, const std::string &content)
+void ProjectScaffolder::writeFile(const fs::path &path, const std::string &content) const
 {
-    fs::path fullPath = rootPath / relPath;
+    const fs::path fullPath = rootPath / path;
 
     if (fs::exists(fullPath)) {
         if (deleteExisting) {
             std::error_code ec;
             fs::remove(fullPath, ec);
             if (!ec) {
-                log("Deleted", relPath.string());
+                log("Deleted", path.string());
             } else {
                 log("Error", "Failed to delete file: " + ec.message());
                 return;
             }
         } else if (!force) {
-            log("Skipped", relPath.string());
+            log("Skipped", path.string());
             return;
         }
     }
 
-    std::ofstream file(fullPath);
-    if (file) {
+    if (std::ofstream file(fullPath); file) {
         file << content;
-        log("Wrote", relPath.string());
+        log("Wrote", path.string());
     }
 }
 
@@ -202,7 +181,8 @@ void ProjectScaffolder::createWorkspace(const std::string &name, const std::vect
 
     std::cout << BOLD << MOON6 << "A fresh Lumenite project\n\n" << RESET;
 
-    std::cout << CYAN << "[*] Initializing Lumenite project in: " << rootPath.string() << RESET << "\n";
+    std::cout << RESET "[" CYAN "*" RESET "] Initializing Lumenite project in: " << colorizePath(
+        rootPath.string(), name) << RESET << "\n";
 
     std::ostringstream config;
     config << "project_name: " << projectName << "\n";
@@ -241,14 +221,13 @@ app:get("/", function(request)
 end)
 )";
 
-    size_t pos = webRoutes.find("{{project_name}}");
-    if (pos != std::string::npos) {
+    if (const size_t pos = webRoutes.find("{{project_name}}"); pos != std::string::npos) {
         webRoutes.replace(pos, 16, name);
     }
     writeFile("app/routes/web.lua", webRoutes);
 
     // --- app/routes/api.lua ---
-    std::string apiRoutes = R"(-- app/routes/api.lua
+    const std::string apiRoutes = R"(-- app/routes/api.lua
 local models = require("app.models")
 
 --[[
@@ -698,6 +677,11 @@ return app
     createDir("log");
     writeFile("log/latest.log", "Hello, World!");
     createDir("vendor");
+    createDir("static");
+    createDir("static/javascript");
+    writeFile("static/javascript/index.js", R"()");
+    createDir("static/styles");
+    writeFile("static/styles/style.css", R"()");
 
     createDir("plugins");
     writeFile("plugins/modules.cpl", R"(# Lumenite Plugins

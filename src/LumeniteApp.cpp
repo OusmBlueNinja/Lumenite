@@ -199,6 +199,7 @@ int LumeniteApp::loadScript(const std::string &path) const
         return 1;
     }
 
+    TemplateEngine::initialize(TemplateEngine::Config{});
 
     LumeniteModule::loadPluginsFromDirectory();
 
@@ -446,6 +447,8 @@ static int builtin_module_loader(lua_State *L)
     std::vector<std::string> searchPaths = {
         relPath + ".lua",
         "plugins/" + relPath + ".lua"
+        "vendor/" + relPath + ".lua"
+
     };
 
     for (const auto &path: searchPaths) {
@@ -574,6 +577,7 @@ int LumeniteApp::lua_route_delete(lua_State *L)
 // ————— Session Access —————
 int LumeniteApp::lua_session_get(lua_State *L)
 {
+    // TODO: make it check that that route does not already exist. 7-28-25
     const char *k = luaL_checkstring(L, 1);
     lua_pushstring(L, SessionManager::get(k).c_str());
     return 1;
@@ -775,9 +779,11 @@ int LumeniteApp::lua_render_template_file(lua_State *L)
         root = TemplateValue{TemplateMap{}};
     }
 
+
     try {
         std::string tmpl = TemplateEngine::loadTemplate(fn);
         auto [ok, result] = TemplateEngine::safeRenderFromString(tmpl, root);
+
         if (!ok) {
             return luaL_error(L, "%s", result.c_str());
         }

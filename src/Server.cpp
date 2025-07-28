@@ -295,7 +295,7 @@ std::string urlDecode(const std::string &value)
     return result.str();
 }
 
-std::string getHeaderValue(const std::unordered_map<std::string, std::string> &headers, const std::string &key)
+std::string Server::getHeaderValue(const std::unordered_map<std::string, std::string> &headers, const std::string &key)
 {
     std::string keyLower = key;
     std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), tolower);
@@ -559,22 +559,24 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
                 push_lua_request(L, req);
 
                 if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
-                    handle_lua_error(L, res);
+                    handle_lua_error(L, res); // TODO: take request instead of res
                     continue;
                 }
 
                 if (lua_istable(L, -1)) {
-                    // Optional override: status
                     lua_getfield(L, -1, "status");
                     if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
                     lua_pop(L, 1);
 
-                    // Optional override: body
                     lua_getfield(L, -1, "body");
-                    if (lua_isstring(L, -1)) res.body = lua_tostring(L, -1);
+                    if (lua_isstring(L, -1)) {
+                        size_t len = 0;
+                        const char *data = lua_tolstring(L, -1, &len);
+                        res.body.assign(data, len);
+                    }
                     lua_pop(L, 1);
 
-                    // Optional override: headers
+
                     lua_getfield(L, -1, "headers");
                     if (lua_istable(L, -1)) {
                         lua_pushnil(L);
@@ -585,14 +587,14 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
                             lua_pop(L, 1);
                         }
                     }
-                    lua_pop(L, 1); // pop headers table
+                    lua_pop(L, 1);
 
-                    lua_pop(L, 1); // pop return table
-                    earlyExit = true;
-                    break; // stop processing other before_request hooks
+                    lua_pop(L, 1);
+                    // earlyExit = true;
+                    break;
                 }
 
-                lua_pop(L, 1); // pop nil or unexpected return
+                lua_pop(L, 1);
             }
 
 
@@ -640,20 +642,23 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
                     push_lua_response(L, res);
 
                     if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
-                        handle_lua_error(L, res); // Automatically logs + sets res if needed
+                        handle_lua_error(L, res);
                         continue;
                     }
 
                     if (lua_istable(L, -1)) {
-                        // Optional override: status
                         lua_getfield(L, -1, "status");
                         if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
                         lua_pop(L, 1);
 
-                        // Optional override: body
                         lua_getfield(L, -1, "body");
-                        if (lua_isstring(L, -1)) res.body = lua_tostring(L, -1);
+                        if (lua_isstring(L, -1)) {
+                            size_t len = 0;
+                            const char *data = lua_tolstring(L, -1, &len);
+                            res.body.assign(data, len);
+                        }
                         lua_pop(L, 1);
+
 
                         // Optional override: headers
                         lua_getfield(L, -1, "headers");
@@ -699,6 +704,7 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
 
 
         std::string method = req.method;
+        // TODO: Write to latest.log
 
         std::cout << BOLD << "[" << dateStream.str() << timeStream.str() << "]" << RESET " "
                 << BOLD << WHITE << std::left << std::setw(16) << ip << RESET
@@ -722,7 +728,7 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
 
 void Server::sendResponse(int clientSocket, const std::string &out)
 {
-    send(clientSocket, out.c_str(), static_cast<int>(out.size()), 0);
+    send(clientSocket, out.data(), static_cast<int>(out.size()), 0);
 #ifdef _WIN32
     closesocket(clientSocket);
 #else

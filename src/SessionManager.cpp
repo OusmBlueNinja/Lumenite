@@ -1,6 +1,7 @@
 #include "SessionManager.h"
 
 #include <chrono>
+#include <iostream>
 #include <random>
 #include <string.h>
 
@@ -20,7 +21,7 @@ static std::string make_id()
     )();
 
     char buffer[17];
-    snprintf(buffer, sizeof(buffer), "%016llx", static_cast<unsigned long long>(r));
+    snprintf(buffer, sizeof(buffer), "%016llx", r);
     return std::string(buffer);
 }
 
@@ -36,6 +37,11 @@ void SessionManager::start(HttpRequest &req, HttpResponse &res)
             currentId = cookies.substr(start, (end == std::string::npos ? cookies.size() : end) - start);
         }
     }
+
+
+
+    //std::cout << res.headers << std::endl;
+
 
     auto sessionIt = store.find(currentId);
     if (currentId.empty() || sessionIt == store.end()) {
