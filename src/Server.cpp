@@ -554,35 +554,47 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
 
             bool earlyExit = false;
 
-            if (LumeniteApp::before_request_ref != LUA_NOREF) {
-                lua_rawgeti(L, LUA_REGISTRYINDEX, LumeniteApp::before_request_ref);
+            for (int ref: LumeniteApp::before_request_refs) {
+                lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
                 push_lua_request(L, req);
+
                 if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
-                    std::cerr << RED "[before_request error] " << lua_tostring(L, -1) << RESET "\n";
-                    lua_pop(L, 1);
-                } else if (lua_istable(L, -1)) {
+                    handle_lua_error(L, res);
+                    continue;
+                }
+
+                if (lua_istable(L, -1)) {
+                    // Optional override: status
                     lua_getfield(L, -1, "status");
                     if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
                     lua_pop(L, 1);
 
+                    // Optional override: body
                     lua_getfield(L, -1, "body");
                     if (lua_isstring(L, -1)) res.body = lua_tostring(L, -1);
                     lua_pop(L, 1);
 
+                    // Optional override: headers
                     lua_getfield(L, -1, "headers");
                     if (lua_istable(L, -1)) {
                         lua_pushnil(L);
                         while (lua_next(L, -2)) {
-                            res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                            const char *key = lua_tostring(L, -2);
+                            const char *val = lua_tostring(L, -1);
+                            if (key && val) res.headers[key] = val;
                             lua_pop(L, 1);
                         }
                     }
-                    lua_pop(L, 1);
+                    lua_pop(L, 1); // pop headers table
 
+                    lua_pop(L, 1); // pop return table
                     earlyExit = true;
+                    break; // stop processing other before_request hooks
                 }
-                lua_pop(L, 1);
+
+                lua_pop(L, 1); // pop nil or unexpected return
             }
+
 
             if (!earlyExit) {
                 int luaRef = 0;
@@ -622,34 +634,42 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
                     res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
                 }
 
-                if (LumeniteApp::after_request_ref != LUA_NOREF) {
-                    lua_rawgeti(L, LUA_REGISTRYINDEX, LumeniteApp::after_request_ref);
+                for (int ref: LumeniteApp::after_request_refs) {
+                    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
                     push_lua_request(L, req);
                     push_lua_response(L, res);
 
                     if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
-                        std::cerr << RED "[after_request error] " << lua_tostring(L, -1) << RESET "\n";
-                        lua_pop(L, 1);
-                    } else if (lua_istable(L, -1)) {
+                        handle_lua_error(L, res); // Automatically logs + sets res if needed
+                        continue;
+                    }
+
+                    if (lua_istable(L, -1)) {
+                        // Optional override: status
                         lua_getfield(L, -1, "status");
                         if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
                         lua_pop(L, 1);
 
+                        // Optional override: body
                         lua_getfield(L, -1, "body");
                         if (lua_isstring(L, -1)) res.body = lua_tostring(L, -1);
                         lua_pop(L, 1);
 
+                        // Optional override: headers
                         lua_getfield(L, -1, "headers");
                         if (lua_istable(L, -1)) {
                             lua_pushnil(L);
                             while (lua_next(L, -2)) {
-                                res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                                const char *key = lua_tostring(L, -2);
+                                const char *val = lua_tostring(L, -1);
+                                if (key && val) res.headers[key] = val;
                                 lua_pop(L, 1);
                             }
                         }
-                        lua_pop(L, 1);
+                        lua_pop(L, 1); // pop headers
                     }
-                    lua_pop(L, 1);
+
+                    lua_pop(L, 1); // pop return value
                 }
             }
         } catch (...) {
