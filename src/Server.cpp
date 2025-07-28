@@ -295,7 +295,7 @@ std::string urlDecode(const std::string &value)
     return result.str();
 }
 
-std::string getHeaderValue(const std::unordered_map<std::string, std::string> &headers, const std::string &key)
+std::string Server::getHeaderValue(const std::unordered_map<std::string, std::string> &headers, const std::string &key)
 {
     std::string keyLower = key;
     std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), tolower);
@@ -559,7 +559,7 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
                 push_lua_request(L, req);
 
                 if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
-                    handle_lua_error(L, res);
+                    handle_lua_error(L, res); // TODO: take request instead of res
                     continue;
                 }
 
@@ -590,7 +590,7 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
                     lua_pop(L, 1);
 
                     lua_pop(L, 1);
-                    earlyExit = true;
+                    // earlyExit = true;
                     break;
                 }
 
@@ -704,6 +704,7 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
 
 
         std::string method = req.method;
+        // TODO: Write to latest.log
 
         std::cout << BOLD << "[" << dateStream.str() << timeStream.str() << "]" << RESET " "
                 << BOLD << WHITE << std::left << std::setw(16) << ip << RESET

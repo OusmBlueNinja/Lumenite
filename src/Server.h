@@ -10,7 +10,6 @@ extern "C"
 #include "lua.h"
 }
 
-// A simple HTTP request representation
 struct HttpRequest
 {
     std::string method;
@@ -22,7 +21,14 @@ struct HttpRequest
     std::string remote_ip;
 };
 
-// A simple HTTP response builder
+inline std::ostream &operator<<(std::ostream &os, const HttpRequest &req)
+{
+    for (const auto &[key, value]: req.headers) {
+        os << key << ": " << value << "\n";
+    }
+    return os;
+}
+
 struct HttpResponse
 {
     int status = 200;
@@ -44,6 +50,10 @@ class Server
 {
 public:
     Server(int port, lua_State *L);
+
+
+    static std::string getHeaderValue(const std::unordered_map<std::string, std::string> &headers,
+                                      const std::string &key);
 
     [[noreturn]] void run() const;
 

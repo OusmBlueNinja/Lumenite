@@ -170,18 +170,20 @@ std::string TemplateEngine::loadTemplate(const std::string &filename)
         throw std::runtime_error("Template not found: " + filename);
     }
 
-    std::streamsize size = file.tellg();
+    const size_t size = file.tellg();
     file.seekg(0, std::ios::beg);
 
+
     std::string content(size, '\0');
-    file.read(&content[0], size);
+    file.read(&content[0], static_cast<std::streamsize>(size));
+
 
     if (config_.enableCache) {
         std::lock_guard<std::mutex> lock(cacheMutex_);
         if (templateCache_.size() >= config_.maxCacheSize) {
             evictLRU();
         }
-        templateCache_[fullPath] = {std::move(content), std::chrono::steady_clock::now(), true};
+        templateCache_[fullPath] = {content, std::chrono::steady_clock::now(), true, size};
     }
 
     return content;

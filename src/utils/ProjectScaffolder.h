@@ -20,17 +20,15 @@ public:
     fs::path rootPath;
 
 private:
-    std::string colorizePath(const std::string &pathStr, const std::string &projectName);
-
     bool force = false;
     bool deleteExisting = false;
 
 
-    void createDir(const std::filesystem::path &path);
+    void createDir(const std::filesystem::path &path) const;
 
-    void writeFile(const std::filesystem::path &path, const std::string &content);
+    void writeFile(const std::filesystem::path &path, const std::string &content) const;
 
-    void log(const std::string &message, const std::string &prefix = "[+] ");
+    [[nodiscard]] std::string colorizePath(const std::string &pathStr, const std::string &projectName) const;
+
+    void log(const std::string &action, const std::string &text) const;
 };
-
-
