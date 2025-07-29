@@ -451,7 +451,7 @@ static int builtin_module_loader(lua_State *L)
 
     };
 
-    
+
     for (const auto &path: searchPaths) {
         std::ifstream file(path);
         if (file.good()) {
