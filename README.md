@@ -42,9 +42,12 @@ embedded web tools.
 
 ```bash
 git clone https://dock-it.dev/GigabiteHosting/Lumenite.git
+
 cd Lumenite
+
 mkdir build && cd build
 cmake ..
+
 make
 ```
 
