@@ -85,6 +85,17 @@ public:
 
     static int db_select_all(lua_State *L);
 
+    static int db_begin(lua_State *L);
+
+    static int db_commit(lua_State *L);
+
+    static int db_rollback(lua_State *L);
+
+    static int db_last_id(lua_State *L);
+
+    static int db_delete(lua_State *L);
+
+
     static int db_gc(lua_State *L);
 
     static DB **check(lua_State *L);

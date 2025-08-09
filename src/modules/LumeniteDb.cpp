@@ -1,4 +1,5 @@
-// src/modules/LumeniteDb.cpp
+// Hours spent: 37
+// Gigabite: im sad right now, and my eyes hurt. but it works now. and thats what matters.
 
 #include "LumeniteDB.h"
 #include <sqlite3.h>
@@ -9,17 +10,18 @@
 #include <algorithm>
 #include <cctype>
 #include <ctime>
-
+#include <chrono>
+#include <map>
+#include <vector>
+#include <fstream>
 
 #include "../ErrorHandler.h"
+
+namespace fs = std::filesystem;
 
 std::string LumeniteDB::db_filename{};
 bool LumeniteDB::sql_log_enabled{};
 std::ofstream LumeniteDB::sql_log_stream{};
-
-
-namespace fs = std::filesystem;
-
 
 std::map<std::string, LumeniteDB::Model> LumeniteDB::models;
 LumeniteDB::Session LumeniteDB::session;
@@ -29,6 +31,7 @@ static int instance_newindex(lua_State *L);
 
 static void bind_filter_args(lua_State *L, sqlite3_stmt *stmt);
 
+static constexpr const char *LM_HIDDEN_TABLE_KEY = "__lm_table__";
 
 static std::string current_timestamp()
 {
@@ -39,65 +42,47 @@ static std::string current_timestamp()
     return buf;
 }
 
-
-// ── Exec runner (no return) ───────────────────────────────────────────────
-static void run_sql_exec(lua_State *L, const std::string &sql)
+static void log_sql(const std::string &sql)
 {
     if (LumeniteDB::sql_log_stream.is_open()) {
-        LumeniteDB::sql_log_stream
-                << "[" << current_timestamp() << "] " << sql << "\n";
+        LumeniteDB::sql_log_stream << "[" << current_timestamp() << "] " << sql << "\n";
         LumeniteDB::sql_log_stream.flush();
     }
-    if (!LumeniteDB::db_instance)
-        luaL_error(L, "No DB connection. Call db.open() first");
-    if (!LumeniteDB::db_instance->exec(sql))
-        luaL_error(L, "SQL error: %s",
-                   LumeniteDB::db_instance->lastError().c_str());
 }
 
-// ── Query runner (returns Lua table + prints rows) ─────────────────────────
-static int run_sql_query(lua_State *L, const std::string &sql)
+static void require_db(lua_State *L)
 {
-    // 1) log the SQL
-    if (LumeniteDB::sql_log_stream.is_open()) {
-        LumeniteDB::sql_log_stream
-                << "[" << current_timestamp() << "] " << sql << "\n";
-        LumeniteDB::sql_log_stream.flush();
-    }
     if (!LumeniteDB::db_instance)
         luaL_error(L, "No DB connection. Call db.open() first");
+}
 
-    // 2) prepare
+static void run_sql_exec(lua_State *L, const std::string &sql)
+{
+    log_sql(sql);
+    require_db(L);
+    if (!LumeniteDB::db_instance->exec(sql)) {
+        luaL_error(L, "SQL error: %s", LumeniteDB::db_instance->lastError().c_str());
+    }
+}
+
+static int run_sql_query(lua_State *L, const std::string &sql)
+{
+    log_sql(sql);
+    require_db(L);
+
     sqlite3_stmt *stmt = nullptr;
-    if (sqlite3_prepare_v2(
-            LumeniteDB::db_instance->handle,
-            sql.c_str(), -1, &stmt, nullptr
-        ) != SQLITE_OK) {
-        luaL_error(L, "SQLite prepare failed: %s",
-                   sqlite3_errmsg(LumeniteDB::db_instance->handle));
+    if (sqlite3_prepare_v2(LumeniteDB::db_instance->handle, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        luaL_error(L, "SQLite prepare failed: %s", sqlite3_errmsg(LumeniteDB::db_instance->handle));
     }
 
-    // 3) bind any filter args
+    // bind any filter args from caller table[__filter_args]
     bind_filter_args(L, stmt);
 
-    // 4) fetch & print rows
     lua_newtable(L);
     int row = 1;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         int cols = sqlite3_column_count(stmt);
 
-        //// —— debug print
-        //std::cout << "[lumenite.db.result] row " << (row - 1) << ": ";
-        //for (int c = 0; c < cols; ++c) {
-        //    const char *col = sqlite3_column_name(stmt, c);
-        //    const unsigned char *txt = sqlite3_column_text(stmt, c);
-        //    const char *val = txt ? reinterpret_cast<const char *>(txt) : "NULL";
-        //    std::cout << col << "=" << val;
-        //    if (c + 1 < cols) std::cout << ", ";
-        //}
-        //std::cout << "\n";
-
-        // —— build Lua table
         lua_newtable(L);
         for (int c = 0; c < cols; ++c) {
             const char *col = sqlite3_column_name(stmt, c);
@@ -109,36 +94,49 @@ static int run_sql_query(lua_State *L, const std::string &sql)
         lua_rawseti(L, -2, row++);
     }
 
-    // 5) cleanup & return the table
     sqlite3_finalize(stmt);
     return 1;
 }
 
-
 static void bind_filter_args(lua_State *L, sqlite3_stmt *stmt)
 {
+    // Caller’s query table is expected at stack index 1
     lua_getfield(L, 1, "__filter_args");
     if (!lua_istable(L, -1)) {
         lua_pop(L, 1);
         return;
     }
+
     int n = (int) lua_rawlen(L, -1);
     for (int i = 1; i <= n; ++i) {
         lua_rawgeti(L, -1, i);
-        if (lua_isinteger(L, -1)) sqlite3_bind_int(stmt, i, (int) lua_tointeger(L, -1));
-        else if (lua_isnumber(L, -1)) sqlite3_bind_double(stmt, i, lua_tonumber(L, -1));
-        else if (lua_isstring(L, -1)) sqlite3_bind_text(stmt, i, lua_tostring(L, -1), -1, SQLITE_TRANSIENT);
-        else sqlite3_bind_null(stmt, i);
-        lua_pop(L, 1);
+        if (lua_isinteger(L, -1)) {
+            sqlite3_bind_int64(stmt, i, (sqlite3_int64) lua_tointeger(L, -1));
+        } else if (lua_isnumber(L, -1)) {
+            sqlite3_bind_double(stmt, i, lua_tonumber(L, -1));
+        } else if (lua_isstring(L, -1)) {
+            sqlite3_bind_text(stmt, i, lua_tostring(L, -1), -1, SQLITE_TRANSIENT);
+        } else if (lua_isnil(L, -1)) {
+            sqlite3_bind_null(stmt, i);
+        } else {
+            // Fallback: convert to string
+            lua_getglobal(L, "tostring");
+            lua_pushvalue(L, -2);
+            lua_call(L, 1, 1);
+            const char *s = lua_tostring(L, -1);
+            sqlite3_bind_text(stmt, i, s ? s : "", -1, SQLITE_TRANSIENT);
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 1); // pop value
     }
-    lua_pop(L, 1);
+    lua_pop(L, 1); // pop __filter_args table
 }
 
 static int proxy_index(lua_State *L)
 {
-    lua_getfield(L, 1, "__data"); // push data table
-    lua_pushvalue(L, 2); // push key
-    lua_gettable(L, -2); // data[key]
+    lua_getfield(L, 1, "__data");
+    lua_pushvalue(L, 2);
+    lua_gettable(L, -2);
     return 1;
 }
 
@@ -147,22 +145,22 @@ static int proxy_newindex(lua_State *L)
     // upvalue #1 = tablename
     const char *tablename = lua_tostring(L, lua_upvalueindex(1));
 
-    // 1) rawset into proxy.__data
-    lua_getfield(L, 1, "__data"); // stack: proxy, key, val, data
+    // rawset into proxy.__data
+    lua_getfield(L, 1, "__data"); // [proxy, key, val, data]
     lua_pushvalue(L, 2); // key
     lua_pushvalue(L, 3); // val
     lua_rawset(L, -3); // data[key] = val
     lua_pop(L, 1); // pop data
 
-    // 2) queue the UPDATE
+    // queue UPDATE using id
     lua_getfield(L, 1, "__data");
     lua_getfield(L, -1, "id");
     const char *id = lua_tostring(L, -1);
     lua_pop(L, 2);
 
     LumeniteDB::Update upd;
-    upd.tablename = tablename;
-    upd.changes["id"] = id;
+    upd.tablename = tablename ? tablename : "";
+    upd.changes["id"] = id ? id : "";
     lua_pushvalue(L, 3);
     const char *v = lua_tostring(L, -1);
     lua_pop(L, 1);
@@ -172,7 +170,6 @@ static int proxy_newindex(lua_State *L)
     return 0;
 }
 
-
 static void clone_query(lua_State *L)
 {
     lua_newtable(L);
@@ -180,24 +177,17 @@ static void clone_query(lua_State *L)
 
     lua_pushnil(L);
     while (lua_next(L, 1) != 0) {
-        // stack: [ ... , key, value ]
-        lua_pushvalue(L, -2); // copy key
-        lua_pushvalue(L, -2); // copy value
-        lua_settable(L, newTbl); // newTbl[key] = value
-        lua_pop(L, 1); // pop value, keep key for next()
+        lua_pushvalue(L, -2); // key
+        lua_pushvalue(L, -2); // value
+        lua_settable(L, newTbl);
+        lua_pop(L, 1); // pop value, keep key
     }
-
-    // Replace slot‑1 with our newTbl
-    lua_replace(L, 1);
+    lua_replace(L, 1); // replace arg-1 with the clone
 }
 
-
-static void register_default_query_methods(lua_State *L,
-                                           int idx,
-                                           const std::string &tablename)
+static void register_default_query_methods(lua_State *L, int idx, const std::string &tablename)
 {
-    // ─── order_by(expr) ──────────────────────────────────────────────────────
-    // Just remember the ORDER BY clause; don't execute yet.
+    // order_by(expr)
     lua_pushstring(L, tablename.c_str());
     lua_pushcclosure(L, [](lua_State *L)-> int
     {
@@ -210,8 +200,7 @@ static void register_default_query_methods(lua_State *L,
     }, 1);
     lua_setfield(L, idx, "order_by");
 
-    // ─── limit(n) ────────────────────────────────────────────────────────────
-    // Just remember the LIMIT; don't execute yet.
+    // limit(n)
     lua_pushstring(L, tablename.c_str());
     lua_pushcclosure(L, [](lua_State *L)-> int
     {
@@ -224,8 +213,7 @@ static void register_default_query_methods(lua_State *L,
     }, 1);
     lua_setfield(L, idx, "limit");
 
-    // ─── filter_by({ k=v, … }) ────────────────────────────────────────────────
-    // Build a WHERE‑fragment and args list; don't execute until first()/all().
+    // filter_by({k=v,...})
     lua_pushstring(L, tablename.c_str());
     lua_pushcclosure(L, [](lua_State *L)-> int
     {
@@ -244,18 +232,14 @@ static void register_default_query_methods(lua_State *L,
             if (first) {
                 where << "WHERE ";
                 first = false;
-            } else {
-                where << " AND ";
-            }
+            } else { where << " AND "; }
             where << col << " = ?";
 
-            // collect the value
             lua_pushvalue(L, -1);
             lua_rawseti(L, argsIdx, lua_rawlen(L, argsIdx) + 1);
             lua_pop(L, 1);
         }
 
-        // store just the fragment (no SELECT, no semicolon)
         lua_pushstring(L, where.str().c_str());
         lua_setfield(L, 1, "__filter_sql");
         lua_pushvalue(L, argsIdx);
@@ -266,40 +250,40 @@ static void register_default_query_methods(lua_State *L,
     }, 1);
     lua_setfield(L, idx, "filter_by");
 
-    // … inside register_default_query_methods …
-
-    // ─── get(id) ─────────────────────────────────────────────────────────────
+    // get(id) -> proxy or nil
     lua_pushstring(L, tablename.c_str());
     lua_pushcclosure(L, [](lua_State *L)-> int
     {
         const char *tbl = lua_tostring(L, lua_upvalueindex(1));
-        // pick arg 1 or 2 for colon vs dot call
         int arg = (lua_istable(L, 1) && (lua_isinteger(L, 2) || lua_isstring(L, 2))) ? 2 : 1;
         if (!lua_isinteger(L, arg) && !lua_isstring(L, arg))
             return luaL_error(L, "Expected integer or string ID");
 
-        // stash single filter arg
+        // Clone the query table (slot 1) and attach __filter_args there
+        clone_query(L);
         lua_newtable(L);
         lua_pushvalue(L, arg);
         lua_rawseti(L, -2, 1);
         lua_setfield(L, 1, "__filter_args");
 
-        std::string sql = std::string("SELECT * FROM ") + tbl +
-                          " WHERE id = ? LIMIT 1;";
-        // pushes a 1‑element array of rows
-        run_sql_query(L, sql);
+        std::string sql = std::string("SELECT * FROM ") + tbl + " WHERE id = ? LIMIT 1;";
+        run_sql_query(L, sql); // pushes result-table
 
-        // extract the first row
         lua_rawgeti(L, -1, 1);
-        lua_replace(L, -2); // stack now: [ row_table ]
+        bool hasRow = !lua_isnil(L, -1);
+        if (!hasRow) {
+            lua_pop(L, 2); // pop nil row + result-table
+            lua_pushnil(L);
+            return 1;
+        }
 
-        // wrap in proxy
-        lua_newtable(L); // [ row, proxy ]
-        lua_pushvalue(L, -2); // [ row, proxy, row ]
-        lua_setfield(L, -2, "__data"); // proxy.__data = row
+        lua_replace(L, -2); // stack: [ row_table ]
 
-        // build metatable
-        lua_newtable(L); // [ row, proxy, mt ]
+        lua_newtable(L); // proxy
+        lua_pushvalue(L, -2); // row
+        lua_setfield(L, -2, "__data");
+
+        lua_newtable(L); // mt
         lua_pushcfunction(L, proxy_index);
         lua_setfield(L, -2, "__index");
         lua_pushstring(L, tbl);
@@ -307,12 +291,12 @@ static void register_default_query_methods(lua_State *L,
         lua_setfield(L, -2, "__newindex");
         lua_setmetatable(L, -2); // set mt on proxy
 
-        lua_remove(L, -2); // remove raw row, leave [ proxy ]
+        lua_remove(L, -2); // remove raw row
         return 1;
     }, 1);
     lua_setfield(L, idx, "get");
 
-    // ─── first() ────────────────────────────────────────────────────────────
+    // first() -> proxy or nil
     lua_pushstring(L, tablename.c_str());
     lua_pushcclosure(L, [](lua_State *L)-> int
     {
@@ -332,6 +316,13 @@ static void register_default_query_methods(lua_State *L,
         run_sql_query(L, ss.str());
 
         lua_rawgeti(L, -1, 1);
+        bool hasRow = !lua_isnil(L, -1);
+        if (!hasRow) {
+            lua_pop(L, 2); // nil + result table
+            lua_pushnil(L);
+            return 1;
+        }
+
         lua_replace(L, -2); // [ row_table ]
 
         lua_newtable(L);
@@ -351,8 +342,7 @@ static void register_default_query_methods(lua_State *L,
     }, 1);
     lua_setfield(L, idx, "first");
 
-
-    // ─── all() ──────────────────────────────────────────────────────────────
+    // all() -> table of rows
     lua_pushstring(L, tablename.c_str());
     lua_pushcclosure(L, [](lua_State *L)-> int
     {
@@ -376,8 +366,28 @@ static void register_default_query_methods(lua_State *L,
         return run_sql_query(L, ss.str());
     }, 1);
     lua_setfield(L, idx, "all");
-}
 
+    lua_pushstring(L, tablename.c_str());
+    lua_pushcclosure(L, [](lua_State *L)-> int
+    {
+        const char *tbl = lua_tostring(L, lua_upvalueindex(1));
+        std::stringstream ss;
+        ss << "SELECT COUNT(*) AS c FROM " << tbl << " ";
+        lua_getfield(L, 1, "__filter_sql");
+        if (lua_isstring(L, -1)) ss << lua_tostring(L, -1) << " ";
+        lua_pop(L, 1);
+        ss << ";";
+        run_sql_query(L, ss.str()); // [{ c = "N" }]
+        lua_rawgeti(L, -1, 1);
+        lua_getfield(L, -1, "c");
+        const char *cs = lua_tostring(L, -1);
+        lua_Integer n = cs ? (lua_Integer) std::strtoll(cs, nullptr, 10) : 0;
+        lua_pop(L, 3); // c, row, result
+        lua_pushinteger(L, n);
+        return 1;
+    }, 1);
+    lua_setfield(L, idx, "count");
+}
 
 static int model_new(lua_State *L)
 {
@@ -403,7 +413,7 @@ static int model_new(lua_State *L)
 
 static void create_model_table(lua_State *L, const LumeniteDB::Model &M)
 {
-    // instance metatable (for User.new)
+    // instance metatable (for User.new instances)
     std::string mtn = "LumeniteDB.instance." + M.tablename;
     luaL_newmetatable(L, mtn.c_str());
     lua_pushstring(L, M.tablename.c_str());
@@ -421,7 +431,7 @@ static void create_model_table(lua_State *L, const LumeniteDB::Model &M)
     lua_pushcclosure(L, model_new, 1);
     lua_setfield(L, md, "new");
 
-    // column helpers (User.name:asc(), :desc())
+    // column helpers (User.name:asc() / :desc())
     for (auto &c: M.columns) {
         lua_newtable(L);
         lua_pushstring(L, c.name.c_str());
@@ -432,7 +442,6 @@ static void create_model_table(lua_State *L, const LumeniteDB::Model &M)
             return 1;
         }, 1);
         lua_setfield(L, -2, "asc");
-
         lua_pushstring(L, c.name.c_str());
         lua_pushcclosure(L, [](lua_State *L)-> int
         {
@@ -441,7 +450,6 @@ static void create_model_table(lua_State *L, const LumeniteDB::Model &M)
             return 1;
         }, 1);
         lua_setfield(L, -2, "desc");
-
         lua_setfield(L, md, c.name.c_str());
     }
 
@@ -450,7 +458,6 @@ static void create_model_table(lua_State *L, const LumeniteDB::Model &M)
     register_default_query_methods(L, lua_gettop(L), M.tablename);
     lua_setfield(L, md, "query");
 }
-
 
 // Catches foo.name = "bar" and queues an UPDATE
 static int instance_newindex(lua_State *L)
@@ -468,8 +475,8 @@ static int instance_newindex(lua_State *L)
     lua_pop(L, 1);
 
     LumeniteDB::Update upd;
-    upd.tablename = tn;
-    upd.changes["id"] = id;
+    upd.tablename = tn ? tn : "";
+    upd.changes["id"] = id ? id : "";
     lua_pushvalue(L, 3);
     const char *v = lua_tostring(L, -1);
     lua_pop(L, 1);
@@ -479,7 +486,8 @@ static int instance_newindex(lua_State *L)
     return 0;
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// DB impl
 bool LumeniteDB::DB::open(const std::string &f)
 {
     return sqlite3_open(f.c_str(), &handle) == SQLITE_OK;
@@ -511,7 +519,8 @@ LumeniteDB::DB **LumeniteDB::check(lua_State *L)
     return static_cast<DB **>(luaL_checkudata(L, 1, "LumeniteDB.DB"));
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Lua API core
 int LumeniteDB::db_open(lua_State *L)
 {
     const char *fn = luaL_checkstring(L, 1);
@@ -524,7 +533,7 @@ int LumeniteDB::db_open(lua_State *L)
     if (!fs::exists(logdir)) fs::create_directories(logdir);
 
     fs::path full = dbdir / fn;
-    auto **ud = static_cast<DB **>(lua_newuserdata(L, sizeof(DB*)));
+    auto **ud = static_cast<DB **>(lua_newuserdata(L, sizeof(DB *)));
     *ud = new DB();
     luaL_getmetatable(L, "LumeniteDB.DB");
     lua_setmetatable(L, -2);
@@ -535,24 +544,33 @@ int LumeniteDB::db_open(lua_State *L)
         return 2;
     }
 
+    // Enable foreign keys
+    db_instance = *ud;
+    run_sql_exec(L, "PRAGMA foreign_keys = ON;");
+
     fs::path logfile = logdir / (db_filename + ".log");
     sql_log_stream.open(logfile, std::ios::app);
     if (!sql_log_stream) {
-        std::cerr << "Warning: could not open SQL log at "
-                << logfile.string() << "\n";
+        std::cerr << "Warning: could not open SQL log at " << logfile.string() << "\n";
     }
 
-    db_instance = *ud;
     return 1;
 }
 
-
 int LumeniteDB::db_gc(lua_State *L)
 {
-    delete *check(L);
+    DB **ud = check(L);
+    if (ud && *ud) {
+        if (db_instance == *ud) db_instance = nullptr;
+        delete *ud;
+        *ud = nullptr;
+    }
+    if (sql_log_stream.is_open()) {
+        sql_log_stream.flush();
+        sql_log_stream.close();
+    }
     return 0;
 }
-
 
 int LumeniteDB::db_column(lua_State *L)
 {
@@ -560,23 +578,20 @@ int LumeniteDB::db_column(lua_State *L)
     const char *type = luaL_checkstring(L, 2);
 
     bool pk = false;
-    std::string defv; // will hold whatever `options.default` was
+    std::string defv;
 
     if (lua_istable(L, 3)) {
-        // primary_key?
         lua_getfield(L, 3, "primary_key");
         pk = lua_toboolean(L, -1);
         lua_pop(L, 1);
 
-        // default?
         lua_getfield(L, 3, "default");
         if (lua_isstring(L, -1) || lua_isnumber(L, -1)) {
-            defv = lua_tostring(L, -1); // number→string or string
+            defv = lua_tostring(L, -1);
         }
         lua_pop(L, 1);
     }
 
-    // return { name=…, type=…, primary_key=…, default_value=… }
     lua_newtable(L);
     lua_pushstring(L, name);
     lua_setfield(L, -2, "name");
@@ -585,7 +600,7 @@ int LumeniteDB::db_column(lua_State *L)
     lua_pushboolean(L, pk);
     lua_setfield(L, -2, "primary_key");
     lua_pushstring(L, defv.c_str());
-    lua_setfield(L, -2, "default_value"); // <— changed key here
+    lua_setfield(L, -2, "default_value");
     return 1;
 }
 
@@ -595,7 +610,6 @@ int LumeniteDB::db_model(lua_State *L)
     if (lua_gettop(L) >= 2 && lua_istable(L, 2)) d = 2;
     luaL_checktype(L, d, LUA_TTABLE);
 
-    // __tablename
     lua_getfield(L, d, "__tablename");
     if (!lua_isstring(L, -1))
         return luaL_error(L, "db.Model: missing '__tablename'");
@@ -635,11 +649,10 @@ int LumeniteDB::db_model(lua_State *L)
     return 1;
 }
 
-
 int LumeniteDB::db_create_all(lua_State *L)
 {
     for (auto it = models.rbegin(); it != models.rend(); ++it) {
-        const auto &[tn,mdl] = *it;
+        const auto &[tn, mdl] = *it;
         std::stringstream ss;
         ss << "CREATE TABLE IF NOT EXISTS " << tn << " (";
         for (size_t i = 0; i < mdl.columns.size(); ++i) {
@@ -661,78 +674,148 @@ int LumeniteDB::db_create_all(lua_State *L)
 
 int LumeniteDB::db_session_add(lua_State *L)
 {
-    luaL_checktype(L, 1,LUA_TTABLE);
+    luaL_checktype(L, 1, LUA_TTABLE);
+
     Row row;
+    // Copy all k/v to row.values
     lua_pushnil(L);
     while (lua_next(L, 1)) {
-        row.values[lua_tostring(L, -2)] = lua_tostring(L, -1) ? lua_tostring(L, -1) : "";
+        const char *k = lua_tostring(L, -2);
+        const char *v = lua_tostring(L, -1);
+        row.values[k ? k : ""] = v ? v : "";
         lua_pop(L, 1);
     }
+
+    // Resolve model/tablname from metatable.__model
     lua_getmetatable(L, 1);
     lua_getfield(L, -1, "__model");
-    session.tablename = lua_tostring(L, -1);
+    const char *tn = lua_tostring(L, -1);
     lua_pop(L, 2);
+
+    // Record table per-row without changing the public structs
+    row.values[LM_HIDDEN_TABLE_KEY] = tn ? tn : "";
+
+    // Keep session.tablename for backward-compat (single-table sessions)
+    session.tablename = tn ? tn : "";
+
     session.pending_inserts.push_back(std::move(row));
     return 0;
 }
 
 int LumeniteDB::db_session_commit(lua_State *L)
 {
-    // INSERTs
+    require_db(L);
+
+    // INSERTs (prepared)
     for (auto &r: session.pending_inserts) {
-        std::stringstream k, v;
-        k << "(";
-        v << "(";
-        bool first = true;
-        for (auto &kv: r.values) {
-            if (!first) {
-                k << ", ";
-                v << ", ";
-            }
-            first = false;
-            k << kv.first;
-            v << "'" << kv.second << "'";
+        auto itT = r.values.find(LM_HIDDEN_TABLE_KEY);
+        std::string tablename = (itT != r.values.end()) ? itT->second : session.tablename;
+
+        // Build ordered list of columns/values excluding the hidden key
+        std::vector<std::string> cols;
+        std::vector<std::string> vals;
+        cols.reserve(r.values.size());
+        vals.reserve(r.values.size());
+
+        for (const auto &kv: r.values) {
+            if (kv.first == LM_HIDDEN_TABLE_KEY) continue;
+            cols.push_back(kv.first);
+            vals.push_back(kv.second);
         }
-        k << ")";
-        v << ")";
 
-        // build and print the INSERT SQL
-        std::string sql =
-                "INSERT INTO " + session.tablename +
-                " " + k.str() + " VALUES " + v.str() + ";";
+        if (cols.empty()) continue;
 
-        run_sql_exec(L, sql);
+        std::stringstream ss;
+        ss << "INSERT INTO " << tablename << " (";
+        for (size_t i = 0; i < cols.size(); ++i) {
+            if (i) ss << ", ";
+            ss << cols[i];
+        }
+        ss << ") VALUES (";
+        for (size_t i = 0; i < cols.size(); ++i) {
+            if (i) ss << ", ";
+            ss << "?";
+        }
+        ss << ");";
+
+        std::string sql = ss.str();
+        log_sql(sql);
+
+        sqlite3_stmt *stmt = nullptr;
+        if (sqlite3_prepare_v2(db_instance->handle, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            luaL_error(L, "SQLite prepare failed (INSERT): %s", sqlite3_errmsg(db_instance->handle));
+        }
+
+        for (int i = 0; i < (int) vals.size(); ++i) {
+            sqlite3_bind_text(stmt, i + 1, vals[i].c_str(), -1, SQLITE_TRANSIENT);
+        }
+
+        int rc = sqlite3_step(stmt);
+        if (rc != SQLITE_DONE) {
+            sqlite3_finalize(stmt);
+            luaL_error(L, "SQLite step failed (INSERT): %s", sqlite3_errmsg(db_instance->handle));
+        }
+        sqlite3_finalize(stmt);
     }
     session.pending_inserts.clear();
 
-    // UPDATEs
+    // UPDATEs (prepared)
     for (auto &u: session.pending_updates) {
+        auto itId = u.changes.find("id");
+        if (itId == u.changes.end()) {
+            continue; // no id -> skip
+        }
+        std::string idVal = itId->second;
+
+        std::vector<std::pair<std::string, std::string> > sets;
+        sets.reserve(u.changes.size());
+        for (const auto &kv: u.changes) {
+            if (kv.first == "id") continue;
+            sets.push_back(kv);
+        }
+        if (sets.empty()) continue;
+
         std::stringstream ss;
         ss << "UPDATE " << u.tablename << " SET ";
-        bool first = true;
-        for (auto &cv: u.changes) {
-            if (cv.first == "id") continue;
-            if (!first) ss << ", ";
-            first = false;
-            ss << cv.first << "='" << cv.second << "'";
+        for (size_t i = 0; i < sets.size(); ++i) {
+            if (i) ss << ", ";
+            ss << sets[i].first << " = ?";
         }
-        ss << " WHERE id='" << u.changes["id"] << "';";
+        ss << " WHERE id = ?;";
 
-        // build and print the UPDATE SQL
         std::string sql = ss.str();
+        log_sql(sql);
 
-        run_sql_exec(L, sql);
+        sqlite3_stmt *stmt = nullptr;
+        if (sqlite3_prepare_v2(db_instance->handle, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            luaL_error(L, "SQLite prepare failed (UPDATE): %s", sqlite3_errmsg(db_instance->handle));
+        }
+
+        int idx = 1;
+        for (const auto &kv: sets) {
+            sqlite3_bind_text(stmt, idx++, kv.second.c_str(), -1, SQLITE_TRANSIENT);
+        }
+        sqlite3_bind_text(stmt, idx, idVal.c_str(), -1, SQLITE_TRANSIENT);
+
+        int rc = sqlite3_step(stmt);
+        if (rc != SQLITE_DONE) {
+            sqlite3_finalize(stmt);
+            luaL_error(L, "SQLite step failed (UPDATE): %s", sqlite3_errmsg(db_instance->handle));
+        }
+        sqlite3_finalize(stmt);
     }
     session.pending_updates.clear();
 
     return 0;
 }
 
-
 int LumeniteDB::db_select_all(lua_State *L)
 {
+    require_db(L);
     const char *tn = luaL_checkstring(L, 1);
     std::string q = std::string("SELECT * FROM ") + tn + ";";
+    log_sql(q);
+
     sqlite3_stmt *s = nullptr;
     if (sqlite3_prepare_v2(db_instance->handle, q.c_str(), -1, &s, nullptr) != SQLITE_OK)
         return luaL_error(L, "SQLite prepare failed: %s", sqlite3_errmsg(db_instance->handle));
@@ -744,23 +827,78 @@ int LumeniteDB::db_select_all(lua_State *L)
         for (int c = 0; c < sqlite3_column_count(s); ++c) {
             const char *col = sqlite3_column_name(s, c);
             const unsigned char *txt = sqlite3_column_text(s, c);
-            if (txt) lua_pushstring(L, (const char *) txt);
+            if (txt) lua_pushstring(L, reinterpret_cast<const char *>(txt));
             else lua_pushnil(L);
             lua_setfield(L, -2, col);
         }
-
         lua_rawseti(L, -2, i++);
     }
     sqlite3_finalize(s);
     return 1;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Extras: transactions, last_insert_id, delete
+int LumeniteDB::db_begin(lua_State *L)
+{
+    run_sql_exec(L, "BEGIN;");
+    return 0;
+}
+
+int LumeniteDB::db_commit(lua_State *L)
+{
+    run_sql_exec(L, "COMMIT;");
+    return 0;
+}
+
+int LumeniteDB::db_rollback(lua_State *L)
+{
+    run_sql_exec(L, "ROLLBACK;");
+    return 0;
+}
+
+int LumeniteDB::db_last_id(lua_State *L)
+{
+    require_db(L);
+    lua_pushinteger(L, (lua_Integer) sqlite3_last_insert_rowid(db_instance->handle));
+    return 1;
+}
+
+int LumeniteDB::db_delete(lua_State *L)
+{
+    require_db(L);
+    const char *tn = luaL_checkstring(L, 1);
+    luaL_argcheck(L, lua_isinteger(L, 2) || lua_isstring(L, 2), 2, "id must be int or string");
+
+    std::string sql = std::string("DELETE FROM ") + tn + " WHERE id = ?;";
+    log_sql(sql);
+
+    sqlite3_stmt *st = nullptr;
+    if (sqlite3_prepare_v2(db_instance->handle, sql.c_str(), -1, &st, nullptr) != SQLITE_OK)
+        return luaL_error(L, "SQLite prepare failed (DELETE): %s", sqlite3_errmsg(db_instance->handle));
+
+    if (lua_isinteger(L, 2)) sqlite3_bind_int64(st, 1, (sqlite3_int64) lua_tointeger(L, 2));
+    else sqlite3_bind_text(st, 1, lua_tostring(L, 2), -1, SQLITE_TRANSIENT);
+
+    int rc = sqlite3_step(st);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(st);
+        return luaL_error(L, "SQLite step failed (DELETE): %s", sqlite3_errmsg(db_instance->handle));
+    }
+    sqlite3_finalize(st);
+    return 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 extern "C" int luaopen_lumenite_db(lua_State *L)
 {
+#ifndef LUMENITE_DB_NO_BANNER
     std::cout << YELLOW << "[~] Notice  : " << RESET
             << "The module " << BOLD << "'lumenite.db'" << RESET
             << " is currently in " << BOLD RED << "Alpha" << RESET << ".\n"
             << "             Use with caution - it may be incomplete or insecure.\n";
+#endif
 
     luaL_newmetatable(L, "LumeniteDB.DB");
     lua_pushcfunction(L, LumeniteDB::db_gc);
@@ -782,5 +920,18 @@ extern "C" int luaopen_lumenite_db(lua_State *L)
     lua_setfield(L, -2, "session_commit");
     lua_pushcfunction(L, LumeniteDB::db_select_all);
     lua_setfield(L, -2, "select_all");
+
+    // extras
+    lua_pushcfunction(L, LumeniteDB::db_begin);
+    lua_setfield(L, -2, "begin");
+    lua_pushcfunction(L, LumeniteDB::db_commit);
+    lua_setfield(L, -2, "commit");
+    lua_pushcfunction(L, LumeniteDB::db_rollback);
+    lua_setfield(L, -2, "rollback");
+    lua_pushcfunction(L, LumeniteDB::db_last_id);
+    lua_setfield(L, -2, "last_insert_id");
+    lua_pushcfunction(L, LumeniteDB::db_delete);
+    lua_setfield(L, -2, "delete");
+
     return 1;
 }

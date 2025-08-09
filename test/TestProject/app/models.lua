@@ -1,71 +1,77 @@
 -- app/models.lua
 local db = require("lumenite.db")
 
---[[
-   Model definitions for Lumenite.
-   Use this file to register and configure your application's database models.
+-- fresh start for dev/testing
+local function try_remove(path) pcall(os.remove, path) end
+try_remove("db/user.db")
+try_remove("log/user.db.log")
 
-   • db.open(filename)            - Open (or create) the SQLite database under ./db/
-   • db.Column(name, type, opts)  - Declare a column (opts.primary_key = true)
-   • db.Model{…}                  - Define a new model/table
-   • db.create_all()              - Create all tables you've defined
-   • model.new(data)              - Instantiate a row for insertion
-   • model.query                   - Built‑in query API with methods:
-       • :get(id)       - Fetch a single row by primary key
-       • :all()         - Fetch all matching rows
-       • :first()       - Fetch the first matching row
-       • :filter_by{…}  - Filter rows by a set of conditions
-       • :order_by(expr)- Order by a set of conditions
-   • db.session_add(row)          - Stage a row for insertion
-   • db.session_commit()          - Commit all staged inserts
---]]
-
-
-
+-- open/create DB under ./db/
 local conn, err = db.open("user.db")
 assert(conn, "db.open failed: " .. tostring(err))
 
--- 2) define a simple User model
-local User = db.Model {
+-- Model: users
+-- Note: keep created_at as INTEGER with default os.time() so CREATE TABLE uses a numeric DEFAULT
+local User = db.Model{
    __tablename = "users",
-   id = db.Column("id", "INTEGER", { primary_key = true }),
-   name = db.Column("name", "TEXT"),
-   created_at = db.Column("created_at", "TEXT", { default = os.time() })
+   id          = db.Column("id", "INTEGER", { primary_key = true }), -- INTEGER PRIMARY KEY ⇒ rowid
+   name        = db.Column("name", "TEXT"),
+   created_at  = db.Column("created_at", "INTEGER", { default = os.time() })
 }
 
--- 3) create the table
+-- create tables
 db.create_all()
 
--- 4) insert a few rows
-for _, name in ipairs { "Alice", "Bob", "Charlie" } do
-   local u = User.new { name = name }
-   db.session_add(u)
+-- seed rows (id will auto-assign because INTEGER PRIMARY KEY)
+for _, name in ipairs({ "Alice", "Bob", "Charlie" }) do
+   db.session_add(User.new{ name = name })
 end
 db.session_commit()
 
--- 5) select_all test
-local all = db.select_all("users")
-print("All users:")
-for i, row in ipairs(all) do
-   print(i, row.id, row.name)
+-- print all
+local function print_rows(tag, rows)
+   print(tag)
+   for i, r in ipairs(rows) do
+      print(i, r.id, r.name, r.created_at)
+   end
 end
 
--- 6) query.filter_by + .all()
-local alices = User.query:filter_by({ name = "Alice" }):all()
-assert(#alices == 1, "Expected exactly one Alice")
+-- select_all sanity
+local all = db.select_all("users")
+assert(#all == 3, "expected 3 users after seed")
+print_rows("All users:", all)
+
+-- filter_by + all()
+local alices = User.query:filter_by{ name = "Alice" }:all()
+assert(#alices == 1, "expected exactly one Alice")
 print("Queried Alice -> id=" .. alices[1].id)
 
--- 7) query:get(id)
+-- get(id) (note: ids come back as strings from SQLite text fetch)
 local bob = User.query:get(2)
-assert(bob and bob.name == "Bob", "Expected Bob at id=2")
+assert(bob and bob.name == "Bob", "expected Bob at id=2")
 print("User.get(2) -> name=" .. bob.name)
 
--- 8) query:first() with order_by
+-- first() with order_by(desc)
 local last = User.query:order_by(User.name:desc()):first()
-assert(last, "Last is nil")
+assert(last ~= nil, "first() returned nil unexpectedly")
 print("First by name DESC ->", last.id, last.name)
 
+-- limit() + order_by()
+local top2 = User.query:order_by(User.id:asc()):limit(2):all()
+assert(#top2 == 2 and top2[1].name == "Alice" and top2[2].name == "Bob", "limit/order_by failed")
+print_rows("Top 2 by id asc:", top2)
+
+-- proxy update flow (queues UPDATE; apply on commit)
+local c = User.query:get(3)      -- Charlie
+assert(c and c.name == "Charlie", "expected Charlie at id=3")
+c.name = "Charlene"              -- queued update
+db.session_commit()              -- applies
+local c2 = User.query:get(3)
+assert(c2.name == "Charlene", "proxy update did not persist")
+print("Updated id=3 ->", c2.name)
+
+-- get() / first() nil behavior on missing rows
+assert(User.query:get(999) == nil, "get(999) should be nil")
+assert(User.query:filter_by{ name = "Nobody" }:first() == nil, "first() on empty should be nil")
+
 print("All tests passed!")
-
-
-
