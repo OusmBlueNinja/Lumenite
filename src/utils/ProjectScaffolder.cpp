@@ -320,73 +320,97 @@ end)
 )");
 
     writeFile("app/models.lua", R"(-- app/models.lua
+
+---@diagnostic disable: undefined-global
 local db = require("lumenite.db")
 
---[[
-   Model definitions for Lumenite.
-   Use this file to register and configure your application's database models.
-
-   • db.open(filename)            - Open (or create) the SQLite database under ./db/
-   • db.Column(name, type, opts)  - Declare a column (opts.primary_key = true)
-   • db.Model{…}                  - Define a new model/table
-   • db.create_all()              - Create all tables you've defined
-   • model.new(data)              - Instantiate a row for insertion
-   • model.query                   - Built‑in query API with methods:
-       • :get(id)       - Fetch a single row by primary key
-       • :all()         - Fetch all matching rows
-       • :first()       - Fetch the first matching row
-       • :filter_by{…}  - Filter rows by a set of conditions
-       • :order_by(expr)- Order by a set of conditions
-   • db.session_add(row)          - Stage a row for insertion
-   • db.session_commit()          - Commit all staged inserts
---]]
-
-
-
+-- 1) Open (or create) the SQLite file under ./db/
+--    The engine ensures ./db and ./log exist and enables PRAGMA foreign_keys.
 local conn, err = db.open("user.db")
 assert(conn, "db.open failed: " .. tostring(err))
 
--- 2) define a simple User model
-local User = db.Model {
-   __tablename = "users",
-   id = db.Column("id", "INTEGER", { primary_key = true }),
-   name = db.Column("name", "TEXT"),
-   created_at = db.Column("created_at", "TEXT", { default = os.time() })
+-- 2) Define models
+-- Tip: Use INTEGER for primary keys. SQLite will back it by rowid.
+local User = db.Model{
+  __tablename = "users",
+  id          = db.Column("id", "INTEGER", { primary_key = true }),
+  name        = db.Column("name", "TEXT"),
+  created_at  = db.Column("created_at", "INTEGER", { default = os.time() }),
 }
 
--- 3) create the table
+-- 3) Create tables if they don’t exist
 db.create_all()
 
--- 4) insert a few rows
-for _, name in ipairs { "Alice", "Bob", "Charlie" } do
-   local u = User.new { name = name }
-   db.session_add(u)
-end
-db.session_commit()
-
--- 5) select_all test
-local all = db.select_all("users")
-print("All users:")
-for i, row in ipairs(all) do
-   print(i, row.id, row.name)
+-- 4) Seed data (only if empty)
+if (User.query:count() == 0) then
+  for _, name in ipairs({ "Alice", "Bob", "Charlie" }) do
+    db.session_add(User.new{ name = name })
+  end
+  db.session_commit()
 end
 
--- 6) query.filter_by + .all()
-local alices = User.query:filter_by({ name = "Alice" }):all()
-assert(#alices == 1, "Expected exactly one Alice")
-print("Queried Alice -> id=" .. alices[1].id)
+-- 5) Example: select_all (plain tables; values are strings or nil)
+do
+  local all = db.select_all("users")
+  print("All users:")
+  for i, row in ipairs(all) do
+    print(i, row.id, row.name, row.created_at)
+  end
+end
 
--- 7) query:get(id)
-local bob = User.query:get(2)
-assert(bob and bob.name == "Bob", "Expected Bob at id=2")
-print("User.get(2) -> name=" .. bob.name)
+-- 6) Query API examples (chainable; executes on :all/:first/:get/:count)
+do
+  local alices = User.query:filter_by{ name = "Alice" }:all()
+  assert(#alices >= 1, "Expected at least one Alice")
+  print("Queried Alice -> id=" .. alices[1].id)
 
--- 8) query:first() with order_by
-local last = User.query:order_by(User.name:desc()):first()
-assert(last, "Last is nil")
-print("First by name DESC ->", last.id, last.name)
+  local bob = User.query:get(2)  -- returns proxy or nil
+  if bob then
+    print("User.get(2) -> name=" .. bob.name)
+  end
 
-print("All tests passed!")
+  local last = User.query:order_by(User.name:desc()):first()
+  if last then
+    print("First by name DESC ->", last.id, last.name)
+  end
+end
+
+-- 7) Updates are queued on the proxy, then applied on db.session_commit()
+do
+  local u = User.query:filter_by{ name = "Charlie" }:first()
+  if u then
+    u.name = "Charlene"    -- queued UPDATE
+    db.session_commit()    -- apply UPDATE
+    print("Updated user id=" .. u.id .. " -> name=" .. (User.query:get(u.id).name))
+  end
+end
+
+-- 8) Transactions + last_insert_id()
+do
+  db.begin()
+  db.session_add(User.new{ name = "Dave" })
+  db.session_commit()                    -- insert happens within transaction
+  local new_id = db.last_insert_id()
+  db.commit()
+  print("Inserted Dave with id=" .. tostring(new_id))
+end
+
+-- 9) Delete by id (prepared)
+--    Uncomment to try:
+-- do
+--   local eve = User.query:filter_by{ name = "Eve" }:first()
+--   if eve then
+--     db.delete("users", eve.id)
+--     print("Deleted user id=" .. eve.id)
+--   end
+-- end
+
+-- Export models + db so the app can require them
+return {
+  db   = db,
+  User = User,
+}
+
 
 
 
@@ -486,69 +510,112 @@ print("All tests passed!")
 ---@module "lumenite.db"
 local db = {}
 
+--[[!!
+Lumenite DB — Lua API (EmmyLua annotations)
+-------------------------------------------
+• All row values returned by query/all/select_all are strings (SQLite text) or nil.
+• Query methods are chainable and do not execute until :first(), :all(), :get(), or :count().
+• :get() and :first() return a *proxy* table; reading fields reads current values, assigning
+  (e.g., proxy.name = "X") queues an UPDATE applied on db.session_commit().
+• INTEGER PRIMARY KEY columns are recommended for ids (rowid).
+• Defaults: when you pass `options.default` to Column(...), CREATE TABLE will include a DEFAULT
+  literal (numeric unquoted, strings quoted).
+!!]]
+
 ---@alias ColumnOptions { primary_key?: boolean, default?: any }
 
----@alias ColumnDef { name: string, type: string, primary_key: boolean }
+---@class ColumnDef
+---@field name           string
+---@field type           string
+---@field primary_key    boolean
+---@field default_value  string  @empty string if unset (stringified literal for DDL)
 
 ---@class ColumnHelper
----@field asc  fun(self: ColumnHelper): string  @“<col> ASC”
----@field desc fun(self: ColumnHelper): string  @“<col> DESC”
+---@field asc  fun(self: ColumnHelper): string  @returns "<col> ASC"
+---@field desc fun(self: ColumnHelper): string  @returns "<col> DESC"
 
 ---@class QueryTable
----@field filter_by fun(self: QueryTable, filters: { [string]: string|number }): QueryTable @add a WHERE clause
----@field order_by  fun(self: QueryTable, expr: string):         QueryTable @add an ORDER BY clause
----@field limit     fun(self: QueryTable, n: integer):           QueryTable @limit results
----@field get       fun(self: QueryTable, id: string|integer):   table?      @fetch one by id
----@field first     fun(self: QueryTable):                       table?      @fetch first match
----@field all       fun(self: QueryTable):                       table[]     @fetch all matches
+---@field filter_by fun(self: QueryTable, filters: { [string]: string|number|boolean|nil }): QueryTable
+---@field order_by  fun(self: QueryTable, expr: string): QueryTable
+---@field limit     fun(self: QueryTable, n: integer): QueryTable
+---@field get       fun(self: QueryTable, id: string|integer): table?    @proxy row or nil
+---@field first     fun(self: QueryTable): table?                         @proxy row or nil
+---@field all       fun(self: QueryTable):  table[]                       @array of plain row tables
+---@field count     fun(self: QueryTable):  integer                       @row count for current filters
 
 ---@class ModelTable
----@field new   fun(def: { [string]: any }): table    @create a new instance
----@field query QueryTable                            @the query API
+---@field new   fun(def: { [string]: any }): table    @creates a new instance (to be inserted)
+---@field query QueryTable                            @chainable query builder
 ---@field [string] ColumnHelper                       @each column name → helper with :asc()/:desc()
 
 ---@class DB
----@field open           fun(filename: string):      DB?, string?        @open/create `./db/filename`
----@field Column         fun(name: string, type: string, options?: ColumnOptions): ColumnDef
----@field Model          fun(def: { __tablename: string, [string]: ColumnDef }): ModelTable
----@field create_all     fun():                      nil                @CREATE TABLE IF NOT EXISTS …
----@field session_add    fun(row: table):            nil                @stage an insert
----@field session_commit fun():                      nil                @commit staged inserts
----@field select_all     fun(tablename: string):     table[]            @SELECT * FROM tablename
+---@field open             fun(filename: string):      DB?, string?  @open/create `./db/<filename>`
+---@field Column           fun(name: string, type: string, options?: ColumnOptions): ColumnDef
+---@field Model            fun(def: { __tablename: string, [string]: ColumnDef }): ModelTable
+---@field create_all       fun():                      nil
+---@field session_add      fun(row: table):            nil            @stage an INSERT (from Model.new)
+---@field session_commit   fun():                      nil            @apply staged INSERTs/UPDATEs
+---@field select_all       fun(tablename: string):     table[]        @SELECT * FROM <tablename>
+---@field begin            fun():                      nil            @BEGIN transaction
+---@field commit           fun():                      nil            @COMMIT transaction
+---@field rollback         fun():                      nil            @ROLLBACK transaction
+---@field last_insert_id   fun():                      integer        @sqlite3_last_insert_rowid()
+---@field delete           fun(tablename: string, id: string|integer): nil  @DELETE FROM <table> WHERE id=?
 
---- Opens (or creates) a SQLite file under `./db/`
+--- Opens (or creates) a SQLite file under `./db/`.
+--- Also ensures `./db` and `./log` folders exist and enables `PRAGMA foreign_keys = ON`.
 ---@param filename string
----@return DB?, string?       — the DB instance or nil+error
+---@return DB? db, string? err  -- the DB instance or nil+error
 function db.open(filename) end
 
---- Defines a new column descriptor
+--- Defines a new column descriptor for use in db.Model.
+--- If options.default is numeric, it's emitted unquoted; strings are quoted in DDL.
 ---@param name string
 ---@param type string
 ---@param options? ColumnOptions
 ---@return ColumnDef
 function db.Column(name, type, options) end
 
---- Defines a new model
+--- Defines a new model/table. Example:
+--- local User = db.Model{ __tablename="users", id=db.Column("id","INTEGER",{primary_key=true}) }
 ---@param def { __tablename: string, [string]: ColumnDef }
 ---@return ModelTable
 function db.Model(def) end
 
---- Creates all defined tables
+--- Creates all registered tables with CREATE TABLE IF NOT EXISTS.
 function db.create_all() end
 
---- Stage a row for insertion
+--- Stage a row for insertion (from Model.new{...}). Applied on db.session_commit().
 ---@param row table
 function db.session_add(row) end
 
---- Commit all staged inserts
+--- Apply all staged INSERTs and queued UPDATEs (from proxy assignments).
 function db.session_commit() end
 
---- Select * from a table
+--- Values are strings or nil.
 ---@param tablename string
 ---@return table[]
 function db.select_all(tablename) end
 
+--- BEGIN a transaction.
+function db.begin() end
+
+--- COMMIT the current transaction.
+function db.commit() end
+
+--- ROLLBACK the current transaction.
+function db.rollback() end
+
+--- Returns sqlite3_last_insert_rowid() of the current connection.
+---@return integer
+function db.last_insert_id() end
+
+---@param tablename string
+---@param id string|integer
+function db.delete(tablename, id) end
+
 return db
+
 
     )");
 

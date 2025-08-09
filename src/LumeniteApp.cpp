@@ -6,7 +6,6 @@
 #include <sstream>
 
 #include <json/json.h>
-#include <curl/curl.h>
 
 #include "ErrorHandler.h"
 #include "LumeniteApp.h"
@@ -17,6 +16,7 @@
 #include "modules/LumeniteDb.h"
 #include "modules/LumeniteSafe.h"
 #include "modules/ModuleBase.h"
+#include "utils/LumenitePackageManager.h"
 
 #include "utils/MimeDetector.h"
 
@@ -237,64 +237,16 @@ static int lua_http_get(lua_State *L)
 {
     const char *url = luaL_checkstring(L, 1);
 
-    CURL *curl = curl_easy_init();
-    std::string response;
-    long http_status = 0;
-    CURLcode res;
+    auto [status, body] = LumenitePackageManager::http_get(url);
 
-    lua_newtable(L); // prepare return table
-
-    if (!curl) {
-        lua_pushstring(L, "status");
-        lua_pushinteger(L, 0);
-        lua_settable(L, -3);
-
-        lua_pushstring(L, "body");
-        lua_pushstring(L, "");
-        lua_settable(L, -3);
-
-        lua_pushstring(L, "error");
-        lua_pushstring(L, "CURL initialization failed");
-        lua_settable(L, -3);
-
-        return 1;
-    }
-
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-
-    res = curl_easy_perform(curl);
-
-    if (res != CURLE_OK) {
-        curl_easy_cleanup(curl);
-
-        lua_pushstring(L, "status");
-        lua_pushinteger(L, 0);
-        lua_settable(L, -3);
-
-        lua_pushstring(L, "body");
-        lua_pushstring(L, "");
-        lua_settable(L, -3);
-
-        lua_pushstring(L, "error");
-        lua_pushstring(L, curl_easy_strerror(res));
-        lua_settable(L, -3);
-
-        return 1;
-    }
-
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status);
-    curl_easy_cleanup(curl);
+    lua_newtable(L);
 
     lua_pushstring(L, "status");
-    lua_pushinteger(L, http_status);
+    lua_pushinteger(L, status);
     lua_settable(L, -3);
 
     lua_pushstring(L, "body");
-    lua_pushlstring(L, response.data(), response.size());
+    lua_pushlstring(L, body.data(), body.size());
     lua_settable(L, -3);
 
     return 1;

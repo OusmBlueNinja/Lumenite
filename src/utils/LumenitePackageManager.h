@@ -7,6 +7,9 @@ class LumenitePackageManager
 public:
     static void run(const std::vector<std::string> &args);
 
+    static std::pair<long, std::string> http_get(const std::string &url);
+
+
 private:
     struct AvailablePlugin
     {
@@ -42,7 +45,7 @@ private:
 
     static void cmd_list();
 
-    static std::string http_get(const std::string &url);
+
 
     static bool downloadFile(const std::string &url, const std::string &outPath);
 

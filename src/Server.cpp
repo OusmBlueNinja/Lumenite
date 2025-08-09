@@ -1,3 +1,5 @@
+// Server.cpp
+
 #include "Server.h"
 #include "Router.h"
 #include "LumeniteApp.h"
@@ -13,6 +15,8 @@
 #include <string>
 #include <cstring>
 #include <ctime>
+#include <thread>
+#include <algorithm>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -22,14 +26,13 @@
 #pragma comment(lib, "iphlpapi.lib")
 typedef SOCKET SocketType;
 #else
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <ifaddrs.h>
-typedef int SocketType;
+  #include <sys/socket.h>
+  #include <netinet/in.h>
+  #include <arpa/inet.h>
+  #include <unistd.h>
+  #include <ifaddrs.h>
+  typedef int SocketType;
 #endif
-
 
 static constexpr auto DEFAULT_CONTENT_TYPE = "text/html";
 
@@ -123,161 +126,13 @@ std::string getColorForStatus(int code)
 }
 
 
-Server::Server(int port, lua_State *L)
-    : port(port), L(L)
+Server::Server(int port_, lua_State *L_)
+    : port(port_), L(L_)
 {
 }
 
 
-void printLocalIPs(int port)
-{
-    std::vector<std::string> addresses;
-
-#ifdef _WIN32
-    ULONG bufferSize = 15000;
-    const auto adapterAddrs = static_cast<IP_ADAPTER_ADDRESSES *>(malloc(bufferSize));
-    if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST, nullptr, adapterAddrs, &bufferSize) == ERROR_SUCCESS) {
-        for (PIP_ADAPTER_ADDRESSES adapter = adapterAddrs; adapter != nullptr; adapter = adapter->Next) {
-            for (PIP_ADAPTER_UNICAST_ADDRESS addr = adapter->FirstUnicastAddress; addr != nullptr; addr = addr->Next) {
-                SOCKADDR *sa = addr->Address.lpSockaddr;
-                char ip[INET6_ADDRSTRLEN];
-                if (sa->sa_family == AF_INET) {
-                    getnameinfo(sa, sizeof(sockaddr_in), ip, sizeof(ip), nullptr, 0, NI_NUMERICHOST);
-
-                    if (std::string ipStr = ip;
-                        ipStr.rfind("169.254.", 0) != 0 && // Ignore link-local
-                        ipStr != "0.0.0.0"
-                    ) {
-                        addresses.emplace_back(ipStr);
-                    }
-                }
-            }
-        }
-    }
-    free(adapterAddrs);
-#else
-    struct ifaddrs *ifaddr;
-    getifaddrs(&ifaddr);
-    for (struct ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
-            char ip[INET_ADDRSTRLEN];
-            void *addr_ptr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
-            inet_ntop(AF_INET, addr_ptr, ip, sizeof(ip));
-            std::string ipStr = ip;
-
-            if (
-                ipStr.rfind("169.254.", 0) != 0 &&
-                ipStr != "0.0.0.0"
-            ) {
-                addresses.emplace_back(ipStr);
-            }
-        }
-    }
-    freeifaddrs(ifaddr);
-#endif
-
-    std::cout << BOLD << CYAN << " *" << RESET << " " << BOLD << "Lumenite Server" << RESET << " running at:\n";
-
-    for (const auto &ip: addresses) {
-        std::cout << "   " << BOLD << "->" << RESET << " "
-                << YELLOW << "http://" << ip << ":" << port << RESET << "\n";
-    }
-
-    std::cout << BOLD << CYAN << " *" << RESET << " Press " << BOLD << "CTRL+C" << RESET << " to quit\n";
-}
-
-
-static void push_lua_request(lua_State *L, const HttpRequest &req)
-{
-    lua_newtable(L);
-
-    lua_pushstring(L, "method");
-    lua_pushstring(L, req.method.c_str());
-    lua_settable(L, -3);
-    lua_pushstring(L, "path");
-    lua_pushstring(L, req.path.c_str());
-    lua_settable(L, -3);
-    lua_pushstring(L, "body");
-    lua_pushstring(L, req.body.c_str());
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "remote_ip");
-    lua_pushstring(L, req.remote_ip.c_str());
-    lua_settable(L, -3);
-
-
-    lua_pushstring(L, "headers");
-    lua_newtable(L);
-    for (const auto &[k, v]: req.headers) {
-        lua_pushstring(L, k.c_str());
-        lua_pushstring(L, v.c_str());
-        lua_settable(L, -3);
-    }
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "query");
-    lua_newtable(L);
-    for (auto &[key, values]: req.query) {
-        if (values.size() == 1) {
-            lua_pushstring(L, key.c_str());
-            lua_pushstring(L, values[0].c_str());
-            lua_settable(L, -3);
-        } else {
-            lua_pushstring(L, key.c_str());
-            lua_newtable(L);
-            for (size_t i = 0; i < values.size(); ++i) {
-                lua_pushinteger(L, i + 1);
-                lua_pushstring(L, values[i].c_str());
-                lua_settable(L, -3);
-            }
-            lua_settable(L, -3);
-        }
-    }
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "form");
-    lua_newtable(L);
-    for (auto &[key, values]: req.form) {
-        if (values.size() == 1) {
-            lua_pushstring(L, key.c_str());
-            lua_pushstring(L, values[0].c_str());
-        } else {
-            lua_pushstring(L, key.c_str());
-            lua_newtable(L);
-            for (size_t i = 0; i < values.size(); ++i) {
-                lua_pushinteger(L, i + 1);
-                lua_pushstring(L, values[i].c_str());
-                lua_settable(L, -3);
-            }
-        }
-        lua_settable(L, -3);
-    }
-    lua_settable(L, -3);
-}
-
-static void push_lua_response(lua_State *L, const HttpResponse &res)
-{
-    lua_newtable(L);
-
-    lua_pushstring(L, "status");
-    lua_pushinteger(L, res.status);
-    lua_settable(L, -3);
-    lua_pushstring(L, "body");
-    lua_pushstring(L, res.body.c_str());
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "headers");
-    lua_newtable(L);
-    for (const auto &[k, v]: res.headers) {
-        lua_pushstring(L, k.c_str());
-        lua_pushstring(L, v.c_str());
-        lua_settable(L, -3);
-    }
-    lua_settable(L, -3);
-}
-
-
-std::string urlDecode(const std::string &value)
+static std::string urlDecode(const std::string &value)
 {
     std::ostringstream result;
     for (size_t i = 0; i < value.size(); ++i) {
@@ -295,122 +150,492 @@ std::string urlDecode(const std::string &value)
     return result.str();
 }
 
-std::string Server::getHeaderValue(const std::unordered_map<std::string, std::string> &headers, const std::string &key)
+// Case-insensitive header lookup
+static std::string getHeaderValue(const std::unordered_map<std::string, std::string> &h, const std::string &key)
 {
-    std::string keyLower = key;
-    std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), tolower);
-
-    for (const auto &[k, v]: headers) {
-        std::string headerKey = k;
-        std::transform(headerKey.begin(), headerKey.end(), headerKey.begin(), tolower);
-        if (headerKey == keyLower) {
-            return v;
-        }
+    std::string lk = key;
+    std::transform(lk.begin(), lk.end(), lk.begin(), ::tolower);
+    for (auto &p: h) {
+        std::string k = p.first;
+        std::transform(k.begin(), k.end(), k.begin(), ::tolower);
+        if (k == lk) return p.second;
     }
-
     return "";
 }
 
+// Print “Lumenite Server running at http://…”
+static void printLocalIPs(int port)
+{
+    std::vector<std::string> addrs;
+#ifdef _WIN32
+    ULONG bufLen = 15000;
+    auto buf = (IP_ADAPTER_ADDRESSES *) malloc(bufLen);
+    if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST, nullptr, buf, &bufLen) == ERROR_SUCCESS) {
+        for (auto ad = buf; ad; ad = ad->Next) {
+            for (auto ua = ad->FirstUnicastAddress; ua; ua = ua->Next) {
+                if (ua->Address.lpSockaddr->sa_family == AF_INET) {
+                    char ip[INET_ADDRSTRLEN];
+                    getnameinfo(ua->Address.lpSockaddr, sizeof(sockaddr_in), ip, sizeof(ip), nullptr, 0,NI_NUMERICHOST);
+                    std::string s(ip);
+                    if (s.rfind("169.254.", 0) != 0 && s != "0.0.0.0") addrs.push_back(s);
+                }
+            }
+        }
+    }
+    free(buf);
+#else
+    struct ifaddrs *ifa;
+    if (!getifaddrs(&ifa)) {
+        for (auto p = ifa; p; p = p->ifa_next) {
+            if (p->ifa_addr && p->ifa_addr->sa_family==AF_INET) {
+                char ip[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET,&((sockaddr_in*)p->ifa_addr)->sin_addr,ip,sizeof(ip));
+                std::string s(ip);
+                if (s.rfind("169.254.",0)!=0 && s!="0.0.0.0") addrs.push_back(s);
+            }
+        }
+        freeifaddrs(ifa);
+    }
+#endif
 
-void handle_lua_error(lua_State *L, HttpResponse &res)
+    std::cout << "\033[1;36m *\033[0m \033[1mLumenite Server\033[0m running at:\n";
+    for (auto &ip: addrs)
+        std::cout << "   \033[1m->\033[0m \033[33mhttp://" << ip << ":" << port << "\033[0m\n";
+    std::cout << "\033[1;36m *\033[0m Press \033[1mCTRL+C\033[0m to quit\n";
+}
+
+// —————————————————————————————————————————————
+// Lua integration helpers (pulled from original):
+// —————————————————————————————————————————————
+
+static void push_lua_request(lua_State *L, const HttpRequest &req)
+{
+    lua_newtable(L);
+    lua_pushstring(L, "method");
+    lua_pushstring(L, req.method.c_str());
+    lua_settable(L, -3);
+    lua_pushstring(L, "path");
+    lua_pushstring(L, req.path.c_str());
+    lua_settable(L, -3);
+    lua_pushstring(L, "body");
+    lua_pushstring(L, req.body.c_str());
+    lua_settable(L, -3);
+    lua_pushstring(L, "remote_ip");
+    lua_pushstring(L, req.remote_ip.c_str());
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "headers");
+    lua_newtable(L);
+    for (auto &h: req.headers) {
+        lua_pushstring(L, h.first.c_str());
+        lua_pushstring(L, h.second.c_str());
+        lua_settable(L, -3);
+    }
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "query");
+    lua_newtable(L);
+    for (auto &q: req.query) {
+        if (q.second.size() == 1) {
+            lua_pushstring(L, q.first.c_str());
+            lua_pushstring(L, q.second[0].c_str());
+            lua_settable(L, -3);
+        } else {
+            lua_pushstring(L, q.first.c_str());
+            lua_newtable(L);
+            for (size_t i = 0; i < q.second.size(); ++i) {
+                lua_pushinteger(L, i + 1);
+                lua_pushstring(L, q.second[i].c_str());
+                lua_settable(L, -3);
+            }
+            lua_settable(L, -3);
+        }
+    }
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "form");
+    lua_newtable(L);
+    for (auto &f: req.form) {
+        if (f.second.size() == 1) {
+            lua_pushstring(L, f.first.c_str());
+            lua_pushstring(L, f.second[0].c_str());
+        } else {
+            lua_pushstring(L, f.first.c_str());
+            lua_newtable(L);
+            for (size_t i = 0; i < f.second.size(); ++i) {
+                lua_pushinteger(L, i + 1);
+                lua_pushstring(L, f.second[i].c_str());
+                lua_settable(L, -3);
+            }
+        }
+        lua_settable(L, -3);
+    }
+    lua_settable(L, -3);
+}
+
+static void push_lua_response(lua_State *L, const HttpResponse &res)
+{
+    lua_newtable(L);
+    lua_pushstring(L, "status");
+    lua_pushinteger(L, res.status);
+    lua_settable(L, -3);
+    lua_pushstring(L, "body");
+    lua_pushstring(L, res.body.c_str());
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "headers");
+    lua_newtable(L);
+    for (auto &h: res.headers) {
+        lua_pushstring(L, h.first.c_str());
+        lua_pushstring(L, h.second.c_str());
+        lua_settable(L, -3);
+    }
+    lua_settable(L, -3);
+}
+
+static void handle_lua_error(lua_State *L, HttpResponse &res)
 {
     if (lua_istable(L, -1)) {
         lua_getfield(L, -1, "__kind");
-        const bool isAbort = lua_isstring(L, -1) && std::string(lua_tostring(L, -1)) == "__LUMENITE_ABORT__";
+        bool isAbort = lua_isstring(L, -1) && std::string(lua_tostring(L, -1)) == "__LUMENITE_ABORT__";
         lua_pop(L, 1);
-
         if (isAbort) {
             lua_getfield(L, -1, "status");
-            const int code = lua_isinteger(L, -1) ? lua_tointeger(L, -1) : 500;
+            int code = lua_isinteger(L, -1) ? lua_tointeger(L, -1) : 500;
+            lua_pop(L, 1);
             res.status = code;
-            lua_pop(L, 1);
 
-            // Extract message
-            std::string message{};
             lua_getfield(L, -1, "message");
-            if (lua_isstring(L, -1)) {
-                message = lua_tostring(L, -1);
-
-                std::time_t now = std::time(nullptr);
-                std::tm *ltm = std::localtime(&now);
-
-                std::ostringstream dateStream, timeStream;
-                dateStream << "\033[90m" << std::put_time(ltm, "%d/%b/%Y") << RESET;
-                timeStream << WHITE << ":" << MAGENTA << std::put_time(ltm, "%H:%M:%S") << RESET;
-
-                auto statusColor = getColorForStatus(code);
-
-                std::cout << BOLD << "[" << dateStream.str() << timeStream.str() << "]" << RESET << " "
-                        << BOLD << RED << std::left << std::setw(16) << "ABORT" << RESET
-                        << statusColor << std::setw(4) << code << RESET << " "
-                        << BOLD << RED << message << RESET << "\n";
-            }
+            std::string msg;
+            if (lua_isstring(L, -1)) msg = lua_tostring(L, -1);
             lua_pop(L, 1);
 
-            std::ostringstream fallback;
-            fallback << "<h1>" << code << " "
-                    << (statusMessages.contains(code) ? statusMessages.at(code) : "Error")
-                    << "</h1>";
-            res.body = fallback.str();
+            // Log abort
+            auto now = std::time(nullptr);
+            std::tm *tm = std::localtime(&now);
+            std::ostringstream ds, ts;
+            ds << "\033[90m" << std::put_time(tm, "%d/%b/%Y") << "\033[0m";
+            ts << "\033[37m:\033[35m" << std::put_time(tm, "%H:%M:%S") << "\033[0m";
+            auto sc = getColorForStatus(code);
 
+            std::cout
+                    << "\033[1m[" << ds.str() << ts.str() << "]\033[0m "
+                    << "\033[1m\033[31mABORT          \033[0m"
+                    << sc << std::setw(4) << code << "\033[0m "
+                    << "\033[1m\033[31m" << msg << "\033[0m\n";
+
+            // Fallback HTML
+            std::ostringstream fb;
+            fb << "<h1>" << code << " "
+                    << (statusMessages.count(code) ? statusMessages.at(code) : "Error")
+                    << "</h1>";
+            res.body = fb.str();
             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
             lua_pop(L, 1);
             return;
         }
     }
-
-    std::cerr << RED << "[Lua Error] " << lua_tostring(L, -1) << RESET << "\n";
+    // Generic Lua error
+    std::cerr << "\033[31m[Lua Error]\033[0m " << lua_tostring(L, -1) << "\n";
     lua_pop(L, 1);
     res.status = 500;
-    res.body = "<h1>" + std::to_string(res.status) + " " + statusMessages.at(res.status) + "</h1>";
+    res.body = "<h1>500 Internal Server Error</h1>";
     res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
 }
 
-
-void parse_lua_response(lua_State *L, HttpResponse &res)
+static void parse_lua_response(lua_State *L, HttpResponse &res)
 {
-    try {
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, "status");
+        if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
+        lua_pop(L, 1);
+
+        lua_getfield(L, -1, "headers");
         if (lua_istable(L, -1)) {
-            lua_getfield(L, -1, "status");
-            if (lua_isinteger(L, -1))
-                res.status = lua_tointeger(L, -1);
-            lua_pop(L, 1);
-
-            lua_getfield(L, -1, "headers");
-            if (lua_istable(L, -1)) {
-                lua_pushnil(L);
-                while (lua_next(L, -2)) {
-                    if (lua_isstring(L, -2) && lua_isstring(L, -1)) {
-                        res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
-                    }
-                    lua_pop(L, 1);
-                }
+            lua_pushnil(L);
+            while (lua_next(L, -2)) {
+                if (lua_isstring(L, -2) && lua_isstring(L, -1))
+                    res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                lua_pop(L, 1);
             }
-            lua_pop(L, 1);
+        }
+        lua_pop(L, 1);
 
-            lua_getfield(L, -1, "body");
-            if (lua_isstring(L, -1)) {
-                size_t sz;
-                const char *s = lua_tolstring(L, -1, &sz);
-                res.body.assign(s, sz);
-            }
-            lua_pop(L, 1);
-        } else if (lua_isstring(L, -1) || lua_isnumber(L, -1)) {
+        lua_getfield(L, -1, "body");
+        if (lua_isstring(L, -1)) {
             size_t sz;
             const char *s = lua_tolstring(L, -1, &sz);
             res.body.assign(s, sz);
         }
+        lua_pop(L, 1);
+    } else if (lua_isstring(L, -1) || lua_isnumber(L, -1)) {
+        size_t sz;
+        const char *s = lua_tolstring(L, -1, &sz);
+        res.body.assign(s, sz);
+    }
+    lua_pop(L, 1);
 
-        if (!res.headers.contains("Content-Type"))
+    if (!res.headers.count("Content-Type"))
+        res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+}
+
+// —————————————————————————————————————————————
+// 1) Read full HTTP request (headers + body) into HttpRequest
+// —————————————————————————————————————————————
+static bool receiveRequest(SocketType sock, const std::string &clientIp, HttpRequest &req)
+{
+    std::string raw;
+    char buf[4096];
+    ssize_t n;
+
+    while (raw.find("\r\n\r\n") == std::string::npos) {
+        n = recv(sock, buf, sizeof(buf), 0);
+        if (n <= 0) return false;
+        raw.append(buf, (size_t) n);
+    }
+
+    auto hdrEnd = raw.find("\r\n\r\n");
+    std::string hdrs = raw.substr(0, hdrEnd);
+    std::string body = raw.substr(hdrEnd + 4);
+
+    std::istringstream ss(hdrs);
+    std::string line;
+    // Request‐line: METHOD PATH-QUERY HTTP/VERSION
+    std::getline(ss, line);
+    if (!line.empty() && line.back() == '\r') line.pop_back(); {
+        std::istringstream ls(line);
+        std::string httpVer;
+        ls >> req.method >> req.path >> httpVer;
+    }
+
+    // headers
+    while (std::getline(ss, line) && !line.empty()) {
+        if (line.back() == '\r') line.pop_back();
+        auto c = line.find(':');
+        if (c != std::string::npos) {
+            std::string k = line.substr(0, c);
+            std::string v = line.substr(c + 1);
+            if (!v.empty() && v.front() == ' ') v.erase(0, 1);
+            req.headers[k] = v;
+        }
+    }
+
+    // parse query string
+    if (auto qm = req.path.find('?'); qm != std::string::npos) {
+        std::string qs = req.path.substr(qm + 1);
+        req.path.resize(qm);
+        for (size_t p = 0; p < qs.size();) {
+            auto amp = qs.find('&', p);
+            std::string kv = qs.substr(p, amp - p);
+            auto eq = kv.find('=');
+            std::string k = urlDecode(kv.substr(0, eq));
+            std::string v = eq != std::string::npos ? urlDecode(kv.substr(eq + 1)) : "";
+            req.query[k].push_back(v);
+            if (amp == std::string::npos) break;
+            p = amp + 1;
+        }
+    }
+
+    // read body per Content-Length
+    size_t contentLen = 0;
+    if (auto it = req.headers.find("Content-Length"); it != req.headers.end()) {
+        contentLen = std::stoul(it->second);
+    }
+    while (body.size() < contentLen) {
+        n = recv(sock, buf, sizeof(buf), 0);
+        if (n <= 0) break;
+        body.append(buf, (size_t) n);
+    }
+    req.body = body;
+
+    // parse form
+    if (req.headers["Content-Type"] == "application/x-www-form-urlencoded") {
+        for (size_t p = 0; p < body.size();) {
+            auto amp = body.find('&', p);
+            std::string pr = body.substr(p, amp - p);
+            auto eq = pr.find('=');
+            std::string k = urlDecode(pr.substr(0, eq));
+            std::string v = eq != std::string::npos ? urlDecode(pr.substr(eq + 1)) : "";
+            req.form[k].push_back(v);
+            if (amp == std::string::npos) break;
+            p = amp + 1;
+        }
+    }
+
+    // remote IP & X-Forwarded-For
+    req.remote_ip = clientIp;
+    if (auto it = req.headers.find("X-Forwarded-For"); it != req.headers.end()) {
+        std::string ff = it->second;
+        if (auto c = ff.find(','); c != std::string::npos) ff.resize(c);
+        ff.erase(0, ff.find_first_not_of(" \t"));
+        ff.erase(ff.find_last_not_of(" \t") + 1);
+        req.remote_ip = ff;
+    }
+
+    return true;
+}
+
+// —————————————————————————————————————————————
+// 2) Invoke before_request, route, after_request in Lua
+// —————————————————————————————————————————————
+static void processRequest(lua_State *L, HttpRequest &req, HttpResponse &res)
+{
+    try {
+        SessionManager::start(req, res);
+
+        // before_request hooks
+        for (int ref: LumeniteApp::before_request_refs) {
+            lua_rawgeti(L,LUA_REGISTRYINDEX, ref);
+            push_lua_request(L, req);
+            if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
+                handle_lua_error(L, res);
+                lua_pop(L, 1);
+                continue;
+            }
+            if (lua_istable(L, -1)) {
+                // override res from table
+                lua_getfield(L, -1, "status");
+                if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
+                lua_pop(L, 1);
+                lua_getfield(L, -1, "body");
+                if (lua_isstring(L, -1)) res.body = lua_tostring(L, -1);
+                lua_pop(L, 1);
+                lua_getfield(L, -1, "headers");
+                if (lua_istable(L, -1)) {
+                    lua_pushnil(L);
+                    while (lua_next(L, -2)) {
+                        if (lua_isstring(L, -2) && lua_isstring(L, -1))
+                            res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                        lua_pop(L, 1);
+                    }
+                }
+                lua_pop(L, 1);
+                lua_pop(L, 1);
+                return;
+            }
+            lua_pop(L, 1);
+        }
+
+        // route match
+        int luaRef = 0;
+        std::vector<std::string> args;
+        Router::match(req.method, req.path, luaRef, args);
+
+        if (luaRef) {
+            lua_rawgeti(L,LUA_REGISTRYINDEX, luaRef);
+            push_lua_request(L, req);
+            for (auto &a: args) lua_pushlstring(L, a.data(), a.size());
+
+            // insert traceback
+            lua_getglobal(L, "debug");
+            lua_getfield(L, -1, "traceback");
+            lua_remove(L, -2);
+            int tb = lua_gettop(L) - (1 + args.size()) - 1;
+            lua_insert(L, tb);
+
+            if (lua_pcall(L, 1 + (int)args.size(), 1, tb) != LUA_OK) {
+                handle_lua_error(L, res);
+            } else {
+                parse_lua_response(L, res);
+            }
+            lua_remove(L, tb);
+        } else {
+            res.status = 404;
+            res.body = "<h1>404 Not Found</h1>";
             res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
+        }
+
+        // after_request hooks
+        for (int ref: LumeniteApp::after_request_refs) {
+            lua_rawgeti(L,LUA_REGISTRYINDEX, ref);
+            push_lua_request(L, req);
+            push_lua_response(L, res);
+            if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+                handle_lua_error(L, res);
+                lua_pop(L, 1);
+                continue;
+            }
+            if (lua_istable(L, -1)) {
+                lua_getfield(L, -1, "status");
+                if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
+                lua_pop(L, 1);
+
+                lua_getfield(L, -1, "body");
+                if (lua_isstring(L, -1)) res.body = lua_tostring(L, -1);
+                lua_pop(L, 1);
+
+                lua_getfield(L, -1, "headers");
+                if (lua_istable(L, -1)) {
+                    lua_pushnil(L);
+                    while (lua_next(L, -2)) {
+                        if (lua_isstring(L, -2) && lua_isstring(L, -1))
+                            res.headers[lua_tostring(L, -2)] = lua_tostring(L, -1);
+                        lua_pop(L, 1);
+                    }
+                }
+                lua_pop(L, 1);
+            }
+            lua_pop(L, 1);
+        }
     } catch (...) {
         res.status = 500;
-        res.body = "<h1>" + std::to_string(res.status) + " " + statusMessages.at(res.status) + "</h1>";
+        res.body = "<h1>500 Internal Server Error</h1>";
         res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
     }
 }
 
+// —————————————————————————————————————————————
+// 3) Decide if we keep the connection alive
+// —————————————————————————————————————————————
+static bool shouldKeepAlive(const HttpRequest &req)
+{
+    if (auto it = req.headers.find("Connection"); it != req.headers.end()) {
+        std::string v = it->second;
+        std::transform(v.begin(), v.end(), v.begin(), ::tolower);
+        if (v == "close") return false;
+        if (v == "keep-alive") return true;
+    }
+    // HTTP/1.1 defaults to persistent
+    return true;
+}
 
+// —————————————————————————————————————————————
+// 4) Log to console
+// —————————————————————————————————————————————
+static void logRequest(const HttpRequest &req, const HttpResponse &res)
+{
+    auto now = std::time(nullptr);
+    auto lt = *std::localtime(&now);
+    std::ostringstream ds, ts;
+    ds << "\033[90m" << std::put_time(&lt, "%d/%b/%Y") << "\033[0m";
+    ts << "\033[37m:\033[35m" << std::put_time(&lt, "%H:%M:%S") << "\033[0m";
+    auto sc = getColorForStatus(res.status);
+
+    const char *mc = "\033[37m";
+    if (req.method == "GET") mc = "\033[36m";
+    else if (req.method == "POST") mc = "\033[35m";
+    else if (req.method == "DELETE") mc = "\033[31m";
+
+    std::cout
+            << "\033[1m[" << ds.str() << ts.str() << "]\033[0m "
+            << "\033[1m\033[37m" << std::left << std::setw(16)
+            << req.remote_ip << "\033[0m "
+            << sc << res.status << "\033[0m "
+            << mc << req.method << "\033[0m "
+            << "\033[34m" << req.path << "\033[0m\n";
+}
+
+// —————————————————————————————————————————————
+// 5) Send raw bytes
+// —————————————————————————————————————————————
+static void sendRaw(SocketType sock, const std::string &data)
+{
+    send(sock, data.data(), static_cast<int>(data.size()), 0);
+}
+
+// —————————————————————————————————————————————
+// Server::run — listen, accept, spawn per-client threads
+// —————————————————————————————————————————————
 [[noreturn]] void Server::run() const
 {
 #ifdef _WIN32
@@ -418,320 +643,50 @@ void parse_lua_response(lua_State *L, HttpResponse &res)
     WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
 
-    SocketType sock = socket(AF_INET, SOCK_STREAM, 0);
+    SocketType lsock = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
-    bind(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
-    listen(sock, 10);
+    bind(lsock, (sockaddr *) &addr, sizeof(addr));
+    listen(lsock, 10);
 
     printLocalIPs(port);
 
-
     while (true) {
-        sockaddr_in clientAddr{};
-        socklen_t len = sizeof(clientAddr);
-        int clientSock = accept(sock, reinterpret_cast<sockaddr *>(&clientAddr), &len);
-        if (clientSock < 0) continue;
+        sockaddr_in ca{};
+        socklen_t llen = sizeof(ca);
+        SocketType csock = accept(lsock, (sockaddr *) &ca, &llen);
+        if (csock < 0) continue;
 
-        std::vector<char> buf(8192);
-        int n = recv(clientSock, buf.data(), static_cast<int>(buf.size()), 0);
-        if (n <= 0) {
+        char ipb[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &ca.sin_addr, ipb, sizeof(ipb));
+        std::string clientIp(ipb);
+
+        // handle each client in its own thread
+        std::thread([this, csock, clientIp]()
+        {
+            bool keep = true;
+            while (keep) {
+                HttpRequest req;
+                HttpResponse res; // default
+
+                if (!receiveRequest(csock, clientIp, req)) break;
+
+                processRequest(L, req, res);
+
+                keep = shouldKeepAlive(req);
+                res.headers["Connection"] = keep ? "keep-alive" : "close";
+                res.headers["Content-Length"] = std::to_string(res.body.size());
+
+                sendRaw(csock, res.serialize());
+                logRequest(req, res);
+            }
 #ifdef _WIN32
-            closesocket(clientSock);
+            closesocket(csock);
 #else
-            close(clientSock);
+            close(csock);
 #endif
-            continue;
-        }
-        char ip[INET6_ADDRSTRLEN];
-        inet_ntop(AF_INET, &clientAddr.sin_addr, ip, sizeof(ip));
-
-
-        HttpRequest req;
-        HttpResponse res;
-
-
-        try {
-            std::string_view raw(buf.data(), n);
-            size_t headerEnd = raw.find("\r\n\r\n");
-            std::string_view header = headerEnd == std::string_view::npos
-                                          ? raw
-                                          : raw.substr(0, headerEnd);
-            std::string_view body = headerEnd == std::string_view::npos
-                                        ? std::string_view{}
-                                        : raw.substr(headerEnd + 4);
-
-            // Parse request line
-            size_t lineEnd = header.find("\r\n");
-            std::string_view reqLine = lineEnd == std::string_view::npos ? header : header.substr(0, lineEnd);
-            size_t sp2 = reqLine.rfind(' ');
-            if (size_t sp1 = reqLine.find(' '); sp1 != std::string_view::npos && sp2 != sp1) {
-                req.method = std::string(reqLine.substr(0, sp1));
-                req.path = std::string(reqLine.substr(sp1 + 1, sp2 - sp1 - 1));
-            }
-
-
-            // Parse headers
-            size_t pos = lineEnd + 2;
-            while (pos < header.size()) {
-                size_t eol = header.find("\r\n", pos);
-                if (eol == std::string_view::npos) break;
-                auto line = header.substr(pos, eol - pos);
-                if (size_t colon = line.find(':'); colon != std::string_view::npos) {
-                    auto key = std::string(line.substr(0, colon));
-                    auto val = std::string(line.substr(colon + 1));
-                    if (!val.empty() && val.front() == ' ') val = val.substr(1);
-                    req.headers.emplace(std::move(key), std::move(val));
-                }
-                pos = eol + 2;
-            }
-
-            // Body copy
-            if (!body.empty()) req.body.assign(body.begin(), body.end());
-
-            if (req.headers["Content-Type"] == "application/x-www-form-urlencoded") {
-                std::string &local_body = req.body;
-
-                size_t p = 0;
-                while (p < local_body.size()) {
-                    size_t amp = local_body.find('&', p);
-                    std::string pair = local_body.substr(p, amp - p);
-
-                    size_t eq = pair.find('=');
-                    std::string key = urlDecode(pair.substr(0, eq));
-                    std::string val = eq != std::string::npos ? urlDecode(pair.substr(eq + 1)) : "";
-
-                    req.form[key].push_back(val); // support repeated keys
-                    if (amp == std::string::npos) break;
-                    p = amp + 1;
-                }
-            }
-
-
-            if (auto qm = req.path.find('?'); qm != std::string::npos) {
-                std::string qs = req.path.substr(qm + 1);
-                req.path.resize(qm);
-
-                size_t p = 0;
-                while ((qm = qs.find('&', p)) != std::string::npos) {
-                    auto kv = qs.substr(p, qm - p);
-                    if (auto eq = kv.find('='); eq != std::string::npos) {
-                        std::string key = urlDecode(kv.substr(0, eq));
-                        std::string value = urlDecode(kv.substr(eq + 1));
-                        req.query[key].push_back(value);
-                    }
-                    p = qm + 1;
-                }
-
-                auto kv = qs.substr(p);
-                if (auto eq = kv.find('='); eq != std::string::npos) {
-                    std::string key = urlDecode(kv.substr(0, eq));
-                    std::string value = urlDecode(kv.substr(eq + 1));
-                    req.query[key].push_back(value);
-                }
-            }
-
-
-            req.remote_ip = ip;
-
-            if (std::string xfwd = getHeaderValue(req.headers, "X-Forwarded-For"); !xfwd.empty()) {
-                size_t comma = xfwd.find(',');
-                std::string firstIp = comma != std::string::npos ? xfwd.substr(0, comma) : xfwd;
-
-                // Trim spaces
-                size_t start = firstIp.find_first_not_of(" \t");
-                if (size_t end = firstIp.find_last_not_of(" \t");
-                    start != std::string::npos && end != std::string::npos)
-                    req.remote_ip = firstIp.substr(start, end - start + 1);
-                else
-                    req.remote_ip = firstIp;
-            }
-
-
-            SessionManager::start(req, res);
-
-            bool earlyExit = false;
-
-            for (int ref: LumeniteApp::before_request_refs) {
-                lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
-                push_lua_request(L, req);
-
-                if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
-                    handle_lua_error(L, res); // TODO: take request instead of res
-                    continue;
-                }
-
-                if (lua_istable(L, -1)) {
-                    lua_getfield(L, -1, "status");
-                    if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
-                    lua_pop(L, 1);
-
-                    lua_getfield(L, -1, "body");
-                    if (lua_isstring(L, -1)) {
-                        size_t len = 0;
-                        const char *data = lua_tolstring(L, -1, &len);
-                        res.body.assign(data, len);
-                    }
-                    lua_pop(L, 1);
-
-
-                    lua_getfield(L, -1, "headers");
-                    if (lua_istable(L, -1)) {
-                        lua_pushnil(L);
-                        while (lua_next(L, -2)) {
-                            const char *key = lua_tostring(L, -2);
-                            const char *val = lua_tostring(L, -1);
-                            if (key && val) res.headers[key] = val;
-                            lua_pop(L, 1);
-                        }
-                    }
-                    lua_pop(L, 1);
-
-                    lua_pop(L, 1);
-                    // earlyExit = true;
-                    break;
-                }
-
-                lua_pop(L, 1);
-            }
-
-
-            if (!earlyExit) {
-                int luaRef = 0;
-                std::vector<std::string> args;
-                if (req.method == "GET" && req.path == "/") {
-                    Router::match("GET", "/", luaRef, args);
-                } else {
-                    Router::match(req.method, req.path, luaRef, args);
-                }
-
-                if (luaRef) {
-                    // Push function and arguments
-                    lua_rawgeti(L, LUA_REGISTRYINDEX, luaRef);
-                    push_lua_request(L, req);
-
-                    for (const auto &a: args)
-                        lua_pushlstring(L, a.data(), a.size());
-
-                    int nargs = 1 + static_cast<int>(args.size());
-
-                    lua_getglobal(L, "debug");
-                    lua_getfield(L, -1, "traceback");
-                    lua_remove(L, -2);
-                    int tracebackIndex = lua_gettop(L) - nargs - 1;
-                    lua_insert(L, tracebackIndex);
-
-                    if (lua_pcall(L, nargs, 1, tracebackIndex) != LUA_OK) {
-                        handle_lua_error(L, res);
-                    } else {
-                        parse_lua_response(L, res);
-                    }
-
-                    lua_remove(L, tracebackIndex);
-                } else {
-                    res.status = 404;
-                    res.body = "<h1>" + std::to_string(res.status) + " " + statusMessages.at(res.status) + "</h1>";
-                    res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
-                }
-
-                for (int ref: LumeniteApp::after_request_refs) {
-                    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
-                    push_lua_request(L, req);
-                    push_lua_response(L, res);
-
-                    if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
-                        handle_lua_error(L, res);
-                        continue;
-                    }
-
-                    if (lua_istable(L, -1)) {
-                        lua_getfield(L, -1, "status");
-                        if (lua_isinteger(L, -1)) res.status = lua_tointeger(L, -1);
-                        lua_pop(L, 1);
-
-                        lua_getfield(L, -1, "body");
-                        if (lua_isstring(L, -1)) {
-                            size_t len = 0;
-                            const char *data = lua_tolstring(L, -1, &len);
-                            res.body.assign(data, len);
-                        }
-                        lua_pop(L, 1);
-
-
-                        // Optional override: headers
-                        lua_getfield(L, -1, "headers");
-                        if (lua_istable(L, -1)) {
-                            lua_pushnil(L);
-                            while (lua_next(L, -2)) {
-                                const char *key = lua_tostring(L, -2);
-                                const char *val = lua_tostring(L, -1);
-                                if (key && val) res.headers[key] = val;
-                                lua_pop(L, 1);
-                            }
-                        }
-                        lua_pop(L, 1); // pop headers
-                    }
-
-                    lua_pop(L, 1); // pop return value
-                }
-            }
-        } catch (...) {
-            res.status = 500;
-            res.body = "<h1>" + std::to_string(res.status) + " " + statusMessages.at(res.status) + "</h1>";
-            res.headers["Content-Type"] = DEFAULT_CONTENT_TYPE;
-        }
-
-        sendResponse(clientSock, res.serialize());
-
-
-        std::time_t now = std::time(nullptr);
-        std::tm *ltm = std::localtime(&now);
-
-        std::ostringstream dateStream, timeStream;
-        dateStream << "\033[90m" << std::put_time(ltm, "%d/%b/%Y") << RESET;
-        timeStream << WHITE << ":" << MAGENTA << std::put_time(ltm, "%H:%M:%S") << RESET;
-
-        auto statusColor = getColorForStatus(res.status);
-
-
-        const char *methodColor = nullptr;
-        if (req.method == "GET") methodColor = CYAN;
-        else if (req.method == "POST") methodColor = MAGENTA;
-        else if (req.method == "DELETE") methodColor = RED;
-        else methodColor = WHITE;
-
-
-        std::string method = req.method;
-        // TODO: Write to latest.log
-
-        std::cout << BOLD << "[" << dateStream.str() << timeStream.str() << "]" << RESET " "
-                << BOLD << WHITE << std::left << std::setw(16) << ip << RESET
-                << statusColor << res.status << RESET " "
-                << methodColor << method << RESET " "
-                << BLUE << req.path << RESET << "\n";
-
-
-        lua_settop(L, 0);
+        }).detach();
     }
-
-
-    // #ifdef _WIN32
-    //     closesocket(sock);
-    //     WSACleanup();
-    // #else
-    //     close(sock);
-    // #endif
-}
-
-
-void Server::sendResponse(int clientSocket, const std::string &out)
-{
-    send(clientSocket, out.data(), static_cast<int>(out.size()), 0);
-#ifdef _WIN32
-    closesocket(clientSocket);
-#else
-    close(clientSocket);
-#endif
 }

@@ -215,7 +215,7 @@ void LumenitePackageManager::saveYAML()
 std::vector<LumenitePackageManager::AvailablePlugin> LumenitePackageManager::fetchRegistry()
 {
     std::vector<AvailablePlugin> list;
-    std::string rawJson = http_get(registryURL);
+    std::string rawJson = http_get(registryURL).second;
     if (rawJson.empty()) {
         log_error("Registry fetch failed.");
         return list;
@@ -276,45 +276,72 @@ void LumenitePackageManager::markPluginInstalled(const std::string &name, const 
 }
 
 
-std::string LumenitePackageManager::http_get(const std::string &url)
+
+std::pair<long, std::string> LumenitePackageManager::http_get(const std::string &url)
 {
 #ifdef _WIN32
-    HINTERNET hInternet = InternetOpenA("LumenitePM", INTERNET_OPEN_TYPE_DIRECT, nullptr, nullptr, 0);
-    if (!hInternet) return "";
+    // Open the Internet session
+    HINTERNET hInternet = InternetOpenA(
+        "LumenitePM",
+        INTERNET_OPEN_TYPE_DIRECT,
+        nullptr,
+        nullptr,
+        0
+    );
+    if (!hInternet) return {0, ""};
 
     DWORD flags = INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_COOKIES;
-
     if (!use_cache) {
-        flags |= INTERNET_FLAG_RELOAD |
-                INTERNET_FLAG_NO_CACHE_WRITE | // never write to cache
-                INTERNET_FLAG_PRAGMA_NOCACHE | // no client or proxy cache
-                INTERNET_FLAG_NO_AUTH | // skip auth
-                INTERNET_FLAG_NO_AUTO_REDIRECT | // stop auto redirects
-                INTERNET_FLAG_IGNORE_REDIRECT_TO_HTTP |
-                INTERNET_FLAG_IGNORE_REDIRECT_TO_HTTPS;
+        flags |= INTERNET_FLAG_RELOAD
+              | INTERNET_FLAG_NO_CACHE_WRITE
+              | INTERNET_FLAG_PRAGMA_NOCACHE
+              | INTERNET_FLAG_NO_AUTH
+              | INTERNET_FLAG_IGNORE_REDIRECT_TO_HTTP
+              | INTERNET_FLAG_IGNORE_REDIRECT_TO_HTTPS;
     }
 
-    HINTERNET hFile = InternetOpenUrlA(hInternet, url.c_str(), nullptr, 0, flags, 0);
+    // Open the URL
+    HINTERNET hFile = InternetOpenUrlA(
+        hInternet,
+        url.c_str(),
+        nullptr, 0,
+        flags,
+        0
+    );
     if (!hFile) {
         InternetCloseHandle(hInternet);
-        return "";
+        return {0, ""};
     }
 
+    // Get the HTTP status code
+    DWORD status = 0, statusLen = sizeof(status);
+    HttpQueryInfoA(
+      hFile,
+      HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+      &status,
+      &statusLen,
+      nullptr
+    );
+
+    // Read the body
     std::ostringstream ss;
     char buffer[4096];
-    DWORD bytesRead;
-    while (InternetReadFile(hFile, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+    DWORD bytesRead = 0;
+    while (InternetReadFile(hFile, buffer, sizeof(buffer), &bytesRead)
+           && bytesRead > 0) {
         ss.write(buffer, bytesRead);
-    }
+           }
 
     InternetCloseHandle(hFile);
     InternetCloseHandle(hInternet);
-    return ss.str();
+
+    return { static_cast<long>(status), ss.str() };
 #else
     log_error("http_get not implemented on this platform.");
-    return "";
+    return {0, ""};
 #endif
 }
+
 
 
 bool LumenitePackageManager::downloadFile(const std::string &url, const std::string &outPath)
